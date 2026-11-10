@@ -1,0 +1,46 @@
+html { font-size: 0.8333vw; }  /* 1rem = 16px a 1920px: todo escala según la pantalla de la TV */
+body { margin: 0; background: #0b0b0f; color: #fff; font-family: Arial, sans-serif; font-size: 1rem; overflow-x: hidden; }
+
+/* Barra superior */
+#nav { position: fixed; top: 0; left: 0; right: 0; height: 4.5rem; padding: 0 3rem; z-index: 10;
+       background: linear-gradient(#000, rgba(0,0,0,0)); }
+.logo { float: left; font-size: 2rem; font-weight: bold; color: #f47521; line-height: 4.5rem; margin-right: 3rem; }
+.ni { float: left; margin: 1rem 0.3rem; padding: 0.5rem 1.5rem; font-size: 1.3rem; color: #ccc; border-radius: 2rem; border-bottom: 3px solid transparent; }
+.ni.on { color: #fff; border-bottom-color: #f47521; }
+.ni.sel { background: #f47521; color: #000; }
+
+/* Banner destacado */
+#hero { position: relative; height: 36rem; margin-bottom: 1rem; background: #111 center top / cover no-repeat; overflow: hidden; }
+#hero .shade { position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+  background: linear-gradient(90deg, #0b0b0f 28%, rgba(11,11,15,.65) 60%, rgba(11,11,15,.25)),
+              linear-gradient(0deg, #0b0b0f, rgba(11,11,15,0) 35%); }
+#hposter { position: absolute; right: 5rem; top: 6rem; width: 17rem; height: 25.5rem; border-radius: .6rem;
+           background: #222 center / cover no-repeat; box-shadow: 0 .5rem 2rem rgba(0,0,0,.7); }
+#htxt { position: absolute; left: 3rem; top: 8rem; width: 48%; }
+.hk { color: #f47521; font-size: 1.2rem; letter-spacing: .2rem; margin-bottom: .6rem; }
+#htxt h2 { margin: 0 0 1rem; font-size: 3.2rem; line-height: 1.1; max-height: 7rem; overflow: hidden; }
+#hdesc { font-size: 1.25rem; line-height: 1.5; color: #ccc; height: 6.5rem; overflow: hidden; margin-bottom: 1.5rem; }
+.btn { display: inline-block; padding: .9rem 2.4rem; font-size: 1.5rem; font-weight: bold; background: #333; border-radius: .4rem; }
+.btn.sel { background: #f47521; color: #000; }
+
+/* Filas horizontales */
+.row { margin: 0 0 1.2rem; }
+.rt { font-size: 1.8rem; margin: 0 3rem .5rem; }
+.vp { overflow: hidden; padding: .6rem 0 .6rem 3rem; }
+.track { position: relative; white-space: nowrap; transition: transform .25s; }
+.row .card { display: inline-block; width: 12rem; margin-right: 1.2rem; vertical-align: top; white-space: normal; }
+
+/* Tarjetas */
+.cover { width: 100%; padding-top: 150%; background: #222 center / cover no-repeat; border-radius: .5rem; }
+.t { font-size: 1.1rem; line-height: 1.4rem; height: 2.8rem; margin-top: .5rem; overflow: hidden; color: #ddd; }
+.card.sel .cover { outline: .3rem solid #f47521; }
+.card.sel .t { color: #f47521; }
+
+/* Cuadrículas */
+.vt { margin: 6.5rem 3rem 1rem; font-size: 2.4rem; font-weight: bold; }
+.grid { padding: 0 3rem 3rem; overflow: hidden; }
+.grid .card { float: left; width: 14.8%; margin: 0 1.4% 1.5rem 0; }
+.chip { float: left; width: 17%; margin: 0 1.5% 1.5rem 0; padding: 2.2rem 0; text-align: center; font-size: 1.7rem; background: #1c1c24; border-radius: .6rem; }
+.chip.sel { background: #f47521; color: #000; }
+
+#msg { display: none; position: fixed; top: 45%; left: 0; right: 0; text-align: center; font-size: 1.8rem; pointer-events: none; }

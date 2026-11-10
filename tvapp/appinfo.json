@@ -1,0 +1,12 @@
+{
+  "id": "com.tvstream.player",
+  "version": "1.0.0",
+  "vendor": "Proyecto TV",
+  "type": "web",
+  "main": "index.html",
+  "title": "TV Stream",
+  "icon": "icon.png",
+  "largeIcon": "largeIcon.png",
+  "bgColor": "#000000",
+  "resolution": "1920x1080"
+}

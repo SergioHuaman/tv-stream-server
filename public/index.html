@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>TV Stream</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="nav"></div>
+<div id="main"></div>
+<div id="msg"></div>
+
+<script>
+  var NAV = [['Inicio', 'home'], ['Catálogo', 'catalog'], ['Géneros', 'genres'], ['Buscar', 'search']];
+  var COLS = 6;
+  var S = { view: 'home', arg: null, zone: 'hero', navI: 0, r: 0, sel: 0 };
+  var main = document.getElementById('main');
+  var rows = [], G = null, heroEl = null, heroBtn = null, heroItem = null, navEls = [];
+  var build = 0;       // identifica la "construcción" actual de la pantalla (evita respuestas tardías)
+  var restore = null;  // estado guardado al volver desde un anime
+
+  function $(id) { return document.getElementById(id); }
+  function el(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) { e.className = cls; }
+    if (text !== undefined) { e.appendChild(document.createTextNode(text)); }
+    return e;
+  }
+  function rem(n) { return n * parseFloat(window.getComputedStyle(document.documentElement).fontSize); }
+  function img(u) { return '/api/img?u=' + encodeURIComponent(u); }
+  function setMsg(t) { $('msg').style.display = t ? 'block' : 'none'; $('msg').innerText = t || ''; }
+
+  function get(url, ok, fail) {
+    var x = new XMLHttpRequest();
+    x.open('GET', url);
+    x.timeout = 120000;   // el primer arranque puede tardar mientras el servidor arma el catálogo
+    x.onload = function () {
+      var j = null;
+      try { j = JSON.parse(x.responseText); } catch (e) {}
+      if (x.status === 200 && j) { ok(j); } else if (fail) { fail(); }
+    };
+    x.onerror = x.ontimeout = function () { if (fail) { fail(); } };
+    x.send();
+  }
+
+  function card(a, lazyImg) {
+    var d = el('div', 'card'), c = el('div', 'cover');
+    if (a.image && !lazyImg) { c.style.backgroundImage = 'url(' + img(a.image) + ')'; }
+    d.appendChild(c);
+    d.appendChild(el('div', 't', a.title || ''));
+    d.item = a; d.cover = c;
+    return d;
+  }
+
+  // En cuadrículas grandes solo se cargan las portadas cercanas a la selección.
+  function lazy(g) {
+    var lo = Math.max(0, S.sel - 24), hi = Math.min(g.els.length, S.sel + 60);
+    for (var i = lo; i < hi; i++) {
+      var e = g.els[i];
+      if (!e.loaded && e.item.image && e.cover) {
+        e.cover.style.backgroundImage = 'url(' + img(e.item.image) + ')';
+        e.loaded = true;
+      }
+    }
+  }
+
+  /* ── Barra superior ── */
+  function navOf(v) { return v === 'home' ? 0 : v === 'catalog' ? 1 : (v === 'genres' || v === 'genre') ? 2 : -1; }
+  function markNav() {
+    for (var i = 0; i < navEls.length; i++) {
+      navEls[i].className = 'ni' + (i === navOf(S.view) ? ' on' : '') + (S.zone === 'nav' && i === S.navI ? ' sel' : '');
+    }
+  }
+
+  /* ── Marcado de selección y scroll ── */
+  function mark() {
+    markNav();
+    var y = 0, i, j;
+    if (S.view === 'home') {
+      if (heroBtn) { heroBtn.className = 'btn' + (S.zone === 'hero' ? ' sel' : ''); }
+      for (i = 0; i < rows.length; i++) {
+        var R = rows[i];
+        for (j = 0; j < R.cards.length; j++) {
+          R.cards[j].className = 'card' + (S.zone === 'rows' && S.r === i && R.c === j ? ' sel' : '');
+        }
+        var cd = R.cards[R.c];
+        if (cd) { R.track.style.transform = 'translateX(' + (-Math.max(0, cd.offsetLeft - cd.offsetWidth * 1.3)) + 'px)'; }
+      }
+      if (S.zone === 'rows' && rows[S.r]) { y = rows[S.r].el.offsetTop - rem(5); }
+    } else if (G) {
+      var base = G.kind === 'chips' ? 'chip' : 'card', e = G.els[S.sel];
+      if (G.prev !== undefined && G.els[G.prev]) { G.els[G.prev].className = base; }
+      if (e) {
+        e.className = base + (S.zone === 'grid' ? ' sel' : '');
+        G.prev = S.sel;
+        if (G.kind !== 'chips') { lazy(G); }
+        if (S.zone === 'grid') { y = e.offsetTop - rem(9); }
+      }
+    }
+    window.scrollTo(0, Math.max(0, y));
+  }
+
+  /* ── Inicio ── */
+  function addRow(title, items) {
+    if (!items || !items.length) { return; }
+    var row = el('div', 'row'), vp = el('div', 'vp'), tr = el('div', 'track'), cards = [];
+    row.appendChild(el('div', 'rt', title));
+    vp.appendChild(tr); row.appendChild(vp);
+    for (var i = 0; i < items.length; i++) { var c = card(items[i]); tr.appendChild(c); cards.push(c); }
+    main.appendChild(row);
+    rows.push({ el: row, track: tr, cards: cards, c: 0 });
+  }
+
+  function genreRows(list, i, b) {
+    if (i >= list.length || b !== build) { return; }
+    get('/api/r/v1/anime/catalog?page=1&genre=' + encodeURIComponent(list[i].slug), function (j) {
+      if (b !== build) { return; }
+      addRow(list[i].name, (j.data && j.data.results) || []);
+      genreRows(list, i + 1, b);
+    }, function () { genreRows(list, i + 1, b); });
+  }
+
+  function buildHome() {
+    var b = build;
+    setMsg('Cargando catálogo... (la primera vez puede tardar un minuto)');
+    get('/api/home', function (d) {
+      if (b !== build) { return; }
+      setMsg('');
+      var h = d.hero[Math.floor(Math.random() * d.hero.length)];
+      heroItem = h;
+      heroEl = el('div'); heroEl.id = 'hero';
+      heroEl.appendChild(el('div', 'shade'));
+      var hp = el('div'); hp.id = 'hposter';
+      if (h.image) { hp.style.backgroundImage = 'url(' + img(h.image) + ')'; }
+      var tx = el('div'); tx.id = 'htxt';
+      var hd = el('div'); hd.id = 'hdesc';
+      heroBtn = el('div', 'btn', 'Ver ahora');
+      tx.appendChild(el('div', 'hk', 'DESTACADO'));
+      tx.appendChild(el('h2', null, h.title));
+      tx.appendChild(hd); tx.appendChild(heroBtn);
+      heroEl.appendChild(hp); heroEl.appendChild(tx);
+      main.appendChild(heroEl);
+
+      get('/api/r/v1/anime/info?url=' + encodeURIComponent(h.url), function (j) {
+        if (b !== build) { return; }
+        var x = j.data || {};
+        hd.innerText = (x.description || '').slice(0, 240);
+        var bg = x.backdrop || x.banner;
+        if (bg) { heroEl.style.backgroundImage = 'url(' + img(bg) + ')'; }
+      });
+
+      for (var i = 0; i < d.rows.length; i++) { addRow(d.rows[i].title, d.rows[i].items); }
+      if (restore && restore.cs) {
+        for (i = 0; i < rows.length; i++) { rows[i].c = Math.min(restore.cs[i] || 0, rows[i].cards.length - 1); }
+      }
+      restore = null;
+      if (S.r > rows.length - 1) { S.r = Math.max(rows.length - 1, 0); }
+      if (S.zone === 'rows' && !rows.length) { S.zone = 'hero'; }
+      genreRows(d.genres || [], 0, b);
+      mark();
+    }, function () { setMsg('No se pudo cargar. ¿Está encendido el resolvedor (puerto 3000)?'); });
+  }
+
+  /* ── Cuadrículas (catálogo y género) ── */
+  function loadCatalog(page, ok, fail) {
+    get('/api/list?offset=' + ((page - 1) * 60) + '&limit=60', function (j) { ok(j.items || [], j.hasMore); }, fail);
+  }
+  function loadGenre(slug) {
+    return function (page, ok, fail) {
+      get('/api/r/v1/anime/catalog?page=' + page + '&genre=' + encodeURIComponent(slug), function (j) {
+        var d = j.data || {}, r = d.results || [];
+        ok(r, d.hasMore !== false && r.length > 0);
+      }, fail);
+    };
+  }
+
+  function buildGrid(title, loader) {
+    main.appendChild(el('div', 'vt', title));
+    var box = el('div', 'grid');
+    main.appendChild(box);
+    G = { box: box, els: [], items: [], loader: loader, page: 0, loading: false, finished: false, cols: COLS, kind: 'cards' };
+    gridLoad();
+  }
+
+  function gridLoad() {
+    var g = G;
+    if (!g || g.loading || g.finished) { return; }
+    g.loading = true; g.page++;
+    if (!g.items.length) { setMsg('Cargando...'); }
+    g.loader(g.page, function (items, hasMore) {
+      g.loading = false;
+      if (g !== G) { return; }
+      setMsg('');
+      for (var i = 0; i < items.length; i++) {
+        var c = card(items[i], true);
+        g.box.appendChild(c); g.els.push(c); g.items.push(items[i]);
+      }
+      if (!hasMore || !items.length) { g.finished = true; }
+      if (!g.items.length) { setMsg('Sin resultados.'); }
+      if (S.sel >= g.items.length && !g.finished) { gridLoad(); return; }   // al volver: sigue cargando hasta tu posición
+      S.sel = Math.min(S.sel, Math.max(g.items.length - 1, 0));
+      mark();
+    }, function () {
+      g.loading = false;
+      if (g === G) { setMsg(g.items.length ? '' : 'No se pudo cargar.'); }
+    });
+  }
+
+  function buildGenres() {
+    var b = build;
+    main.appendChild(el('div', 'vt', 'Géneros'));
+    var box = el('div', 'grid');
+    main.appendChild(box);
+    G = { box: box, els: [], items: [], finished: true, cols: 5, kind: 'chips' };
+    setMsg('Cargando...');
+    get('/api/genres', function (j) {
+      if (b !== build) { return; }
+      var l = j.genres || [];
+      if (!l.length) { setMsg('No se detectaron géneros (mira la consola del servidor).'); return; }
+      setMsg('');
+      for (var i = 0; i < l.length; i++) {
+        var c = el('div', 'chip', l[i].name);
+        c.item = l[i]; box.appendChild(c); G.els.push(c); G.items.push(l[i]);
+      }
+      S.sel = Math.min(S.sel, l.length - 1);
+      mark();
+    }, function () { setMsg('No se pudo cargar.'); });
+  }
+
+  /* ── Navegación entre pantallas ── */
+  function show(view, arg, keep) {
+    build++;
+    S.view = view; S.arg = arg || null;
+    if (!keep) { S.sel = 0; S.r = 0; }
+    main.innerHTML = ''; setMsg('');
+    rows = []; G = null; heroEl = heroBtn = heroItem = null;
+    window.scrollTo(0, 0);
+    S.zone = (view === 'home') ? 'hero' : 'grid';
+    if (view === 'home') { buildHome(); }
+    else if (view === 'catalog') { buildGrid('Catálogo completo', loadCatalog); }
+    else if (view === 'genres') { buildGenres(); }
+    else if (view === 'genre') { buildGrid(arg.name, loadGenre(arg.slug)); }
+    markNav();
+  }
+
+  function save() {
+    var cs = [], i;
+    for (i = 0; i < rows.length; i++) { cs.push(rows[i].c); }
+    sessionStorage.setItem('ui', JSON.stringify({
+      view: S.view, arg: S.arg, navI: S.navI, r: S.r, sel: S.sel, cs: cs,
+      zone: S.zone === 'nav' ? (S.view === 'home' ? 'hero' : 'grid') : S.zone
+    }));
+  }
+  function openAnime(a) {
+    save();
+    sessionStorage.setItem('anime', JSON.stringify(a));
+    location.href = 'anime.html?url=' + encodeURIComponent(a.url);
+  }
+  function activate(i) {
+    var v = NAV[i][1];
+    if (v === 'search') { save(); location.href = 'buscar.html'; return; }
+    if (v !== S.view) { show(v); }
+  }
+  function back() {
+    if (S.view === 'genre') { show('genres'); }
+    else if (S.view !== 'home') { show('home'); }
+    else { window.close(); }
+  }
+
+  /* ── Control remoto ── */
+  document.addEventListener('keydown', function (e) {
+    var k = e.keyCode, z = S.zone;
+    if (k === 461 || k === 27 || k === 8) { e.preventDefault(); back(); return; }
+    if (k === 406) { e.preventDefault(); activate(3); return; }          // botón azul = Buscar
+    var L = k === 37, U = k === 38, R = k === 39, D = k === 40, OK = k === 13;
+    if (!(L || U || R || D || OK)) { return; }
+    e.preventDefault();
+
+    if (z === 'nav') {
+      if (L && S.navI > 0) { S.navI--; }
+      else if (R && S.navI < NAV.length - 1) { S.navI++; }
+      else if (OK) { activate(S.navI); return; }
+      else if (D) { S.zone = S.view === 'home' ? 'hero' : 'grid'; }
+    } else if (z === 'hero') {
+      if (U) { S.zone = 'nav'; S.navI = Math.max(navOf(S.view), 0); }
+      else if (D && rows.length) { S.zone = 'rows'; S.r = 0; }
+      else if (OK && heroItem) { openAnime(heroItem); return; }
+    } else if (z === 'rows') {
+      var row = rows[S.r];
+      if (!row) { return; }
+      if (L && row.c > 0) { row.c--; }
+      else if (R && row.c < row.cards.length - 1) { row.c++; }
+      else if (U) { if (S.r > 0) { S.r--; } else { S.zone = 'hero'; } }
+      else if (D && S.r < rows.length - 1) { S.r++; }
+      else if (OK) { openAnime(row.cards[row.c].item); return; }
+    } else if (z === 'grid') {
+      var n = G ? G.els.length : 0, cols = G ? G.cols : COLS;
+      if (U && (!n || S.sel < cols)) { S.zone = 'nav'; S.navI = Math.max(navOf(S.view), 0); }
+      else if (n) {
+        if (L && S.sel > 0) { S.sel--; }
+        else if (R && S.sel < n - 1) { S.sel++; }
+        else if (U) { S.sel -= cols; }
+        else if (D) {
+          if (S.sel + cols < n) { S.sel += cols; }
+          else if (Math.floor((n - 1) / cols) > Math.floor(S.sel / cols)) { S.sel = n - 1; }
+        }
+        else if (OK) {
+          if (G.kind === 'chips') { show('genre', G.items[S.sel]); } else { openAnime(G.items[S.sel]); }
+          return;
+        }
+        if (G.loader && n - S.sel <= cols * 2) { gridLoad(); }   // scroll infinito
+      }
+    }
+    mark();
+  });
+
+  /* ── Inicio de la app ── */
+  (function init() {
+    var nav = $('nav');
+    nav.appendChild(el('div', 'logo', 'TV STREAM'));
+    for (var i = 0; i < NAV.length; i++) { var n = el('div', 'ni', NAV[i][0]); nav.appendChild(n); navEls.push(n); }
+
+    var ui = null;
+    try { ui = JSON.parse(sessionStorage.getItem('ui') || 'null'); } catch (e) {}
+    sessionStorage.removeItem('ui');
+    if (ui && ui.view) {
+      restore = ui;
+      S.sel = ui.sel || 0; S.r = ui.r || 0;
+      show(ui.view, ui.arg, true);
+      S.zone = ui.zone || S.zone; S.navI = ui.navI || 0;
+    } else {
+      show('home');
+    }
+  })();
+</script>
+</body>
+</html>

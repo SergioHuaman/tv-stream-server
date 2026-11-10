@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Anime</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  #top { position: relative; min-height: 32rem; background: #111 center top / cover no-repeat; overflow: hidden; }
+  #top .shade { position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+    background: linear-gradient(90deg, #0b0b0f 30%, rgba(11,11,15,.7)), linear-gradient(0deg, #0b0b0f, rgba(11,11,15,0) 40%); }
+  #acover { position: absolute; left: 3rem; top: 5rem; width: 16rem; height: 24rem; border-radius: .6rem;
+            background: #222 center / cover no-repeat; box-shadow: 0 .5rem 2rem rgba(0,0,0,.7); }
+  #ainfo { position: relative; margin-left: 21rem; padding: 5.5rem 4rem 2rem 0; }
+  #atitle { font-size: 3rem; margin: 0 0 .6rem; line-height: 1.1; }
+  #ameta { font-size: 1.3rem; color: #f47521; margin-bottom: 1rem; }
+  #adesc { font-size: 1.25rem; line-height: 1.5; color: #ccc; max-height: 11rem; overflow: hidden; }
+  #eps { padding: 0 3rem 3rem; overflow: hidden; }
+  .ep { float: left; width: 8%; margin: 0 1.2% 1.2rem 0; padding: 1.1rem 0; text-align: center; font-size: 1.5rem; background: #1c1c24; border-radius: .5rem; }
+  .ep.sel { background: #f47521; color: #000; }
+  #emsg { margin: 0 3rem 1rem; font-size: 1.3rem; color: #ffb27a; }
+</style>
+</head>
+<body>
+  <div id="top">
+    <div class="shade"></div>
+    <div id="acover"></div>
+    <div id="ainfo">
+      <h1 id="atitle">Cargando...</h1>
+      <div id="ameta"></div>
+      <div id="adesc"></div>
+    </div>
+  </div>
+  <div class="vt" style="margin-top:1.5rem;font-size:2rem">Episodios</div>
+  <div id="emsg"></div>
+  <div id="eps"></div>
+
+<script>
+  var COLS = 10;
+  var m = location.search.match(/[?&]url=([^&]+)/);
+  var animeUrl = m ? decodeURIComponent(m[1]).replace(/\/+$/, '') : '';
+  var eps = [], sel = 0;
+  function $(id) { return document.getElementById(id); }
+  function rem(n) { return n * parseFloat(window.getComputedStyle(document.documentElement).fontSize); }
+  function img(u) { return '/api/img?u=' + encodeURIComponent(u); }
+
+  function names(a) {
+    var o = [], i, v;
+    if (a && a.constructor === Array) {
+      for (i = 0; i < a.length; i++) {
+        v = (typeof a[i] === 'string') ? a[i] : (a[i] && (a[i].name || a[i].title || a[i].slug));
+        if (v) { o.push(v); }
+      }
+    }
+    return o;
+  }
+
+  function episodeNumbers(d) {
+    var e = d.episodes, nums = [], i, n;
+    if (e && e.constructor === Array && e.length) {
+      for (i = 0; i < e.length; i++) {
+        n = (typeof e[i] === 'number') ? e[i] : (e[i] && (e[i].number || e[i].episode || e[i].num));
+        nums.push(n ? Number(n) : i + 1);
+      }
+      return nums;
+    }
+    var total = Number(d.episodes) || Number(d.episodeCount) || Number(d.totalEpisodes) ||
+                Number(d.episodesCount) || Number(d.total_episodes) || 0;
+    if (total > 0 && total < 3000) { for (i = 1; i <= total; i++) { nums.push(i); } }
+    return nums;
+  }
+
+  function mark() {
+    var els = $('eps').children, i;
+    for (i = 0; i < els.length; i++) { els[i].className = 'ep' + (i === sel ? ' sel' : ''); }
+    var e = els[sel];
+    window.scrollTo(0, e ? Math.max(0, e.offsetTop - rem(30)) : 0);
+  }
+
+    function play(n) {
+      var max = 0, i;
+      for (i = 0; i < eps.length; i++) { if (eps[i] > max) { max = eps[i]; } }
+      location.href = 'player.html?ep=' + encodeURIComponent(animeUrl + '/' + n) + '&max=' + max;
+    }
+
+  function render(d) {
+    $('atitle').innerText = d.title || 'Sin título';
+    $('adesc').innerText = d.description || '';
+    var meta = [], g = names(d.genres);
+    if (d.type) { meta.push(d.type); }
+    if (d.year) { meta.push(d.year); }
+    if (d.status) { meta.push(d.status); }
+    if (g.length) { meta.push(g.join(' · ')); }
+    $('ameta').innerText = meta.join('   |   ');
+
+    var cover = d.image || d.cover || d.poster;
+    try { cover = cover || JSON.parse(sessionStorage.getItem('anime') || '{}').image; } catch (e) {}
+    if (cover) { $('acover').style.backgroundImage = 'url(' + img(cover) + ')'; }
+    var bg = d.backdrop || d.banner;
+    if (bg) { $('top').style.backgroundImage = 'url(' + img(bg) + ')'; }
+
+    eps = episodeNumbers(d);
+    if (!eps.length) {
+      var keys = [], k;
+      for (k in d) { keys.push(k); }
+      $('emsg').innerText = 'No encontré la lista de episodios. Campos recibidos: ' + keys.join(', ');
+      return;
+    }
+    for (var i = 0; i < eps.length; i++) {
+      var b = document.createElement('div');
+      b.className = 'ep';
+      b.appendChild(document.createTextNode(eps[i]));
+      $('eps').appendChild(b);
+    }
+    mark();
+  }
+
+  document.addEventListener('keydown', function (e) {
+    var k = e.keyCode, n = sel;
+    if (k === 461 || k === 27 || k === 8) { e.preventDefault(); history.back(); return; }
+    if (k === 37) { n = sel - 1; }
+    else if (k === 39) { n = sel + 1; }
+    else if (k === 38) { n = sel - COLS; }
+    else if (k === 40) { n = sel + COLS; }
+    else if (k === 13 && eps.length) { play(eps[sel]); return; }
+    else { return; }
+    e.preventDefault();
+    if (n >= 0 && n < eps.length) { sel = n; mark(); }
+  });
+
+  if (!animeUrl) {
+    $('atitle').innerText = 'Falta el anime';
+  } else {
+    var x = new XMLHttpRequest();
+    x.open('GET', '/api/r/v1/anime/info?url=' + encodeURIComponent(animeUrl));
+    x.timeout = 30000;
+    x.onload = function () {
+      var j = null;
+      try { j = JSON.parse(x.responseText); } catch (e) {}
+      if (x.status === 200 && j && j.data) { render(j.data); }
+      else { $('atitle').innerText = 'No se pudo cargar el anime.'; }
+    };
+    x.onerror = x.ontimeout = function () { $('atitle').innerText = 'Error de conexión.'; };
+    x.send();
+  }
+</script>
+</body>
+</html>

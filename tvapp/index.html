@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>TV Stream</title>
+  <style>
+    body { margin: 0; background: #000; color: #fff; font: 28px sans-serif; text-align: center; padding-top: 18%; }
+    input, button { font-size: 28px; padding: 10px 16px; margin: 10px; }
+  </style>
+</head>
+<body>
+  <div id="msg">Buscando servidor...</div>
+  <div id="cfg" style="display:none">
+    <input id="ip" placeholder="192.168.1.50:4000"><br>
+    <button id="go">Conectar</button>
+  </div>
+<script>
+  var KEY = 'tv_server';
+  function $(id) { return document.getElementById(id); }
+
+  function probe(addr, ok, fail) {
+    var x = new XMLHttpRequest();
+    x.open('GET', 'http://' + addr + '/api/ping');
+    x.timeout = 4000;
+    x.onload = function () { if (x.status === 200) { ok(); } else { fail(); } };
+    x.onerror = fail; x.ontimeout = fail;
+    x.send();
+  }
+  function connect(addr) {
+    $('msg').innerText = 'Conectando a ' + addr + '...';
+    probe(addr, function () {
+      localStorage.setItem(KEY, addr);
+      location.href = 'http://' + addr + '/';
+    }, function () {
+      $('msg').innerText = 'No se pudo conectar a ' + addr;
+      $('cfg').style.display = 'block';
+      $('ip').value = addr; $('ip').focus();
+    });
+  }
+  $('go').onclick = function () { connect($('ip').value.replace(/^\s+|\s+$/g, '')); };
+  document.addEventListener('keydown', function (e) { if (e.keyCode === 461) { window.close(); } });
+
+  var saved = localStorage.getItem(KEY);
+  if (saved) { connect(saved); }
+  else {
+    $('msg').innerText = 'Escribe la IP de tu PC (ej. 192.168.1.50:4000)';
+    $('cfg').style.display = 'block'; $('ip').focus();
+  }
+</script>
+</body>
+</html>

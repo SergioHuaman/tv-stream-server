@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Buscar</title>
+<style>
+  body { margin: 0; background: #0b0b0f; color: #fff; font-family: sans-serif; }
+  h1 { margin: 0; padding: 20px 40px 0; font-size: 34px; color: #f47521; }
+  #q { margin: 14px 40px; padding: 12px 18px; font-size: 32px; background: #1c1c24; border-radius: 8px; min-height: 40px; }
+  #q.empty { color: #777; }
+  #kb { padding: 0 30px; overflow: hidden; }
+  .k { float: left; width: 8%; margin: 0.5%; padding: 12px 0; text-align: center; font-size: 26px; background: #1c1c24; border-radius: 6px; }
+  .k.sel { background: #f47521; color: #000; }
+  #msg { padding: 14px 40px; font-size: 24px; color: #ffb27a; min-height: 30px; }
+  #res { padding: 0 30px 60px; overflow: hidden; }
+  .card { float: left; width: 18%; margin: 1%; }
+  .cover { width: 100%; padding-top: 145%; background: #222 center/cover no-repeat; border-radius: 8px; }
+  .t { font-size: 20px; margin-top: 8px; height: 52px; overflow: hidden; }
+  .card.sel .cover { outline: 5px solid #f47521; }
+  .card.sel .t { color: #f47521; }
+</style>
+</head>
+<body>
+  <h1>Buscar</h1>
+  <div id="q" class="empty">Escribe para buscar...</div>
+  <div id="kb"></div>
+  <div id="msg"></div>
+  <div id="res"></div>
+
+<script>
+  var $ = function (id) { return document.getElementById(id); };
+  var KEYS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZÑ0123456789'.split('').concat(['ESP', '←']);
+  var KC = 10, RC = 5;                   // columnas del teclado / de resultados
+  var zone = 'kb', ki = 0, ri = 0;
+  var q = '', results = [], timer = null, xhr = null;
+
+  // Teclado en pantalla
+  var i, d;
+  for (i = 0; i < KEYS.length; i++) {
+    d = document.createElement('div');
+    d.className = 'k';
+    d.appendChild(document.createTextNode(KEYS[i]));
+    $('kb').appendChild(d);
+  }
+
+  function mark() {
+    var ks = $('kb').children, rs = $('res').children, j;
+    for (j = 0; j < ks.length; j++) { ks[j].className = 'k' + (zone === 'kb' && j === ki ? ' sel' : ''); }
+    for (j = 0; j < rs.length; j++) { rs[j].className = 'card' + (zone === 'res' && j === ri ? ' sel' : ''); }
+    if (zone === 'res' && rs[ri]) { window.scrollTo(0, rs[ri].offsetTop - 150); } else { window.scrollTo(0, 0); }
+  }
+
+  function updateQ() {
+    $('q').innerText = q ? q : 'Escribe para buscar...';
+    $('q').className = q ? '' : 'empty';
+    clearTimeout(timer);
+    timer = setTimeout(doSearch, 700);   // busca solo cuando dejas de escribir
+  }
+
+  function doSearch() {
+    if (xhr) { xhr.abort(); }
+    var term = q.replace(/^\s+|\s+$/g, '');
+    $('res').innerHTML = ''; results = []; ri = 0;
+    if (term.length < 2) { $('msg').innerText = ''; mark(); return; }
+    $('msg').innerText = 'Buscando...';
+    xhr = new XMLHttpRequest();
+    var mine = xhr;
+    mine.open('GET', '/api/search?q=' + encodeURIComponent(term));
+    mine.timeout = 90000;   // la primera búsqueda puede tardar si arma el índice
+    mine.onload = function () {
+      var j = null;
+      try { j = JSON.parse(mine.responseText); } catch (e) {}
+      if (mine.status !== 200 || !j) { $('msg').innerText = 'Error al buscar.'; return; }
+      results = j.results || [];
+      $('msg').innerText = results.length ? '' : 'Sin resultados para "' + term + '"';
+      for (var n = 0; n < results.length; n++) { addCard(results[n]); }
+      mark();
+    };
+    mine.onerror = mine.ontimeout = function () { $('msg').innerText = 'Error de conexión.'; };
+    mine.send();
+  }
+
+  function addCard(a) {
+    var c = document.createElement('div'); c.className = 'card';
+    var cv = document.createElement('div'); cv.className = 'cover';
+    if (a.image) { cv.style.backgroundImage = 'url(/api/img?u=' + encodeURIComponent(a.image) + ')'; }
+    var t = document.createElement('div'); t.className = 't';
+    t.appendChild(document.createTextNode(a.title));
+    c.appendChild(cv); c.appendChild(t);
+    $('res').appendChild(c);
+  }
+
+  function press(idx) {
+    var key = KEYS[idx];
+    if (key === 'ESP') { q += ' '; }
+    else if (key === '←') { q = q.slice(0, -1); }
+    else { q += key; }
+    updateQ();
+  }
+
+  function abrir(a) {
+    sessionStorage.setItem('anime', JSON.stringify(a));
+    location.href = 'anime.html?url=' + encodeURIComponent(a.url);
+  }
+
+  document.addEventListener('keydown', function (e) {
+    var k = e.keyCode;
+    if (k === 461) { history.back(); return; }
+
+    // Teclado físico (útil para probar en la PC)
+    if (e.key && e.key.length === 1 && /[a-zñ0-9 ]/i.test(e.key) && !e.ctrlKey) {
+      q += e.key.toUpperCase(); updateQ(); return;
+    }
+    if (k === 8) { q = q.slice(0, -1); updateQ(); return; }
+
+    if (zone === 'kb') {
+      if (k === 37 && ki % KC > 0) { ki--; }
+      else if (k === 39 && ki % KC < KC - 1 && ki < KEYS.length - 1) { ki++; }
+      else if (k === 38 && ki >= KC) { ki -= KC; }
+      else if (k === 40) {
+        if (ki + KC < KEYS.length) { ki += KC; }
+        else if (results.length) { zone = 'res'; ri = 0; }
+      }
+      else if (k === 13) { press(ki); }
+      else { return; }
+    } else {
+      if (k === 37 && ri > 0) { ri--; }
+      else if (k === 39 && ri < results.length - 1) { ri++; }
+      else if (k === 38) { if (ri >= RC) { ri -= RC; } else { zone = 'kb'; } }
+      else if (k === 40 && ri + RC < results.length) { ri += RC; }
+      else if (k === 13) { abrir(results[ri]); return; }
+      else { return; }
+    }
+    e.preventDefault();
+    mark();
+  });
+
+  mark();
+</script>
+</body>
+</html>
