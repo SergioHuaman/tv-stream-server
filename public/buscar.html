@@ -4,6 +4,9 @@
 <meta charset="utf-8">
 <title>Buscar</title>
 <style>
+  html, body { height: 100%; overflow: hidden; }
+  #view { position: fixed; top: 0; left: 0; right: 0; bottom: 0; overflow: hidden; }
+  #scroller { position: relative; -webkit-transition: -webkit-transform .25s; transition: transform .25s; }
   body { margin: 0; background: #0b0b0f; color: #fff; font-family: sans-serif; }
   h1 { margin: 0; padding: 20px 40px 0; font-size: 34px; color: #f47521; }
   #q { margin: 14px 40px; padding: 12px 18px; font-size: 32px; background: #1c1c24; border-radius: 8px; min-height: 40px; }
@@ -21,13 +24,19 @@
 </style>
 </head>
 <body>
+  <div id="view"><div id="scroller">
   <h1>Buscar</h1>
   <div id="q" class="empty">Escribe para buscar...</div>
   <div id="kb"></div>
   <div id="msg"></div>
   <div id="res"></div>
-
+  </div></div>
 <script>
+  var scroller = document.getElementById('scroller');
+  function setY(y) {
+    var css = 'translateY(' + (-Math.max(0, Math.round(y))) + 'px)';
+    scroller.style.webkitTransform = css; scroller.style.transform = css;
+  }
   var $ = function (id) { return document.getElementById(id); };
   var KEYS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZÑ0123456789'.split('').concat(['ESP', '←']);
   var KC = 10, RC = 5;                   // columnas del teclado / de resultados
@@ -47,7 +56,7 @@
     var ks = $('kb').children, rs = $('res').children, j;
     for (j = 0; j < ks.length; j++) { ks[j].className = 'k' + (zone === 'kb' && j === ki ? ' sel' : ''); }
     for (j = 0; j < rs.length; j++) { rs[j].className = 'card' + (zone === 'res' && j === ri ? ' sel' : ''); }
-    if (zone === 'res' && rs[ri]) { window.scrollTo(0, rs[ri].offsetTop - 150); } else { window.scrollTo(0, 0); }
+    setY(zone === 'res' && rs[ri] ? rs[ri].offsetTop - 150 : 0);
   }
 
   function updateQ() {

@@ -18,9 +18,13 @@
   .ep { float: left; width: 8%; margin: 0 1.2% 1.2rem 0; padding: 1.1rem 0; text-align: center; font-size: 1.5rem; background: #1c1c24; border-radius: .5rem; }
   .ep.sel { background: #f47521; color: #000; }
   #emsg { margin: 0 3rem 1rem; font-size: 1.3rem; color: #ffb27a; }
+  #toast { display: none; position: fixed; left: 50%; bottom: 8%; -webkit-transform: translateX(-50%); transform: translateX(-50%);
+           padding: 1rem 2.5rem; font-size: 1.8rem; background: #f47521; color: #000; border-radius: .6rem; z-index: 20; }
+  #err { display: none; position: fixed; left: 0; right: 0; top: 0; padding: .6rem 1rem; font-size: 1.2rem; background: #900; color: #fff; z-index: 30; text-align: left; }
 </style>
 </head>
 <body>
+<div id="view"><div id="scroller">
   <div id="top">
     <div class="shade"></div>
     <div id="acover"></div>
@@ -33,15 +37,31 @@
   <div class="vt" style="margin-top:1.5rem;font-size:2rem">Episodios</div>
   <div id="emsg"></div>
   <div id="eps"></div>
+</div></div>
+<div id="toast"></div>
+<div id="err"></div>
 
 <script>
   var COLS = 10;
   var m = location.search.match(/[?&]url=([^&]+)/);
   var animeUrl = m ? decodeURIComponent(m[1]).replace(/\/+$/, '') : '';
-  var eps = [], sel = 0;
+  var eps = [], sel = 0, kind = 'series';
+
   function $(id) { return document.getElementById(id); }
   function rem(n) { return n * parseFloat(window.getComputedStyle(document.documentElement).fontSize); }
   function img(u) { return '/api/img?u=' + encodeURIComponent(u); }
+  function setY(y) {
+    var css = 'translateY(' + (-Math.max(0, Math.round(y))) + 'px)';
+    var s = $('scroller');
+    s.style.webkitTransform = css; s.style.transform = css;
+  }
+
+  // Cualquier error de JavaScript se muestra en una banda roja (útil en la TV, donde no hay F12).
+  window.onerror = function (msg, src, line) {
+    var e = $('err');
+    e.style.display = 'block';
+    e.innerText = 'Error: ' + msg + ' (línea ' + line + ')';
+  };
 
   function names(a) {
     var o = [], i, v;
@@ -54,33 +74,41 @@
     return o;
   }
 
-  function episodeNumbers(d) {
-    var e = d.episodes, nums = [], i, n;
+  // Devuelve [{n: número, url: dirección}] usando la lista real de la ficha (respeta el episodio 0).
+  function episodeList(d) {
+    var e = d.episodes, out = [], i, n, u, it;
     if (e && e.constructor === Array && e.length) {
       for (i = 0; i < e.length; i++) {
-        n = (typeof e[i] === 'number') ? e[i] : (e[i] && (e[i].number || e[i].episode || e[i].num));
-        nums.push(n ? Number(n) : i + 1);
+        it = e[i];
+        n = (typeof it === 'number') ? it : (it ? (it.number !== undefined && it.number !== null ? it.number : (it.episode !== undefined ? it.episode : it.num)) : undefined);
+        n = (n === undefined || n === null || isNaN(Number(n))) ? i + 1 : Number(n);
+        u = (it && it.url) ? it.url : animeUrl + '/' + n;
+        out.push({ n: n, url: u });
       }
-      return nums;
+      out.sort(function (a, b) { return a.n - b.n; });
+      return out;
     }
-    var total = Number(d.episodes) || Number(d.episodeCount) || Number(d.totalEpisodes) ||
-                Number(d.episodesCount) || Number(d.total_episodes) || 0;
-    if (total > 0 && total < 3000) { for (i = 1; i <= total; i++) { nums.push(i); } }
-    return nums;
+    var total = Number(d.totalEpisodes) || Number(d.episodes) || Number(d.episodeCount) || 0;
+    if (total > 0 && total < 3000) { for (i = 1; i <= total; i++) { out.push({ n: i, url: animeUrl + '/' + i }); } }
+    return out;
   }
 
   function mark() {
     var els = $('eps').children, i;
     for (i = 0; i < els.length; i++) { els[i].className = 'ep' + (i === sel ? ' sel' : ''); }
     var e = els[sel];
-    window.scrollTo(0, e ? Math.max(0, e.offsetTop - rem(30)) : 0);
+    setY(e ? e.offsetTop - rem(30) : 0);
   }
 
-    function play(n) {
-      var max = 0, i;
-      for (i = 0; i < eps.length; i++) { if (eps[i] > max) { max = eps[i]; } }
-      location.href = 'player.html?ep=' + encodeURIComponent(animeUrl + '/' + n) + '&max=' + max;
-    }
+  function play(i) {
+    var it = eps[i];
+    if (!it) { return; }
+    var t = $('toast');
+    t.innerText = 'Abriendo ' + (kind === 'movie' ? 'la película' : 'el episodio ' + it.n) + '...';
+    t.style.display = 'block';
+    try { sessionStorage.setItem('epsList', JSON.stringify(eps)); } catch (e) {}
+    setTimeout(function () { location.href = 'player.html?ep=' + encodeURIComponent(it.url); }, 50);
+  }
 
   function render(d) {
     $('atitle').innerText = d.title || 'Sin título';
@@ -98,30 +126,36 @@
     var bg = d.backdrop || d.banner;
     if (bg) { $('top').style.backgroundImage = 'url(' + img(bg) + ')'; }
 
-    eps = episodeNumbers(d);
+    eps = episodeList(d);
     if (!eps.length) {
       var keys = [], k;
       for (k in d) { keys.push(k); }
       $('emsg').innerText = 'No encontré la lista de episodios. Campos recibidos: ' + keys.join(', ');
       return;
     }
+    kind = (eps.length === 1 && /pel/i.test(d.type || '')) ? 'movie' : 'series';
     for (var i = 0; i < eps.length; i++) {
-      var b = document.createElement('div');
-      b.className = 'ep';
-      b.appendChild(document.createTextNode(eps[i]));
-      $('eps').appendChild(b);
+      (function (idx) {
+        var b = document.createElement('div');
+        b.className = 'ep';
+        if (kind === 'movie') { b.style.width = '16%'; }
+        b.appendChild(document.createTextNode(kind === 'movie' ? 'Ver película' : String(eps[idx].n)));
+        b.onclick = function () { sel = idx; mark(); play(idx); };   // clic del Magic Remote
+        $('eps').appendChild(b);
+      })(i);
     }
     mark();
   }
 
   document.addEventListener('keydown', function (e) {
     var k = e.keyCode, n = sel;
+    if (k === 405) { location.href = 'test.html'; return; } 
     if (k === 461 || k === 27 || k === 8) { e.preventDefault(); history.back(); return; }
+    if (k === 13 || e.key === 'Enter') { e.preventDefault(); play(sel); return; }
     if (k === 37) { n = sel - 1; }
     else if (k === 39) { n = sel + 1; }
     else if (k === 38) { n = sel - COLS; }
     else if (k === 40) { n = sel + COLS; }
-    else if (k === 13 && eps.length) { play(eps[sel]); return; }
     else { return; }
     e.preventDefault();
     if (n >= 0 && n < eps.length) { sel = n; mark(); }
@@ -137,7 +171,7 @@
       var j = null;
       try { j = JSON.parse(x.responseText); } catch (e) {}
       if (x.status === 200 && j && j.data) { render(j.data); }
-      else { $('atitle').innerText = 'No se pudo cargar el anime.'; }
+      else { $('atitle').innerText = (j && j.message) ? j.message : 'No se pudo cargar el anime (error ' + x.status + ').'; }
     };
     x.onerror = x.ontimeout = function () { $('atitle').innerText = 'Error de conexión.'; };
     x.send();

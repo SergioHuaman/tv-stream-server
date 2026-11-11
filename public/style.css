@@ -1,5 +1,8 @@
-html { font-size: 0.8333vw; }  /* 1rem = 16px a 1920px: todo escala según la pantalla de la TV */
-body { margin: 0; background: #0b0b0f; color: #fff; font-family: Arial, sans-serif; font-size: 1rem; overflow-x: hidden; }
+html { font-size: 0.8333vw; height: 100%; overflow: hidden; }
+body { margin: 0; height: 100%; overflow: hidden; background: #0b0b0f; color: #fff; font-family: Arial, sans-serif; font-size: 1rem; }
+
+#view { position: fixed; top: 0; left: 0; right: 0; bottom: 0; overflow: hidden; }
+#scroller { position: relative; -webkit-transition: -webkit-transform .25s; transition: transform .25s; }
 
 /* Barra superior */
 #nav { position: fixed; top: 0; left: 0; right: 0; height: 4.5rem; padding: 0 3rem; z-index: 10;
@@ -27,7 +30,7 @@ body { margin: 0; background: #0b0b0f; color: #fff; font-family: Arial, sans-ser
 .row { margin: 0 0 1.2rem; }
 .rt { font-size: 1.8rem; margin: 0 3rem .5rem; }
 .vp { overflow: hidden; padding: .6rem 0 .6rem 3rem; }
-.track { position: relative; white-space: nowrap; transition: transform .25s; }
+.track { position: relative; white-space: nowrap; -webkit-transition: -webkit-transform .25s; transition: transform .25s; }
 .row .card { display: inline-block; width: 12rem; margin-right: 1.2rem; vertical-align: top; white-space: normal; }
 
 /* Tarjetas */

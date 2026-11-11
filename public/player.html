@@ -6,20 +6,22 @@
 <style>
   html, body { height: 100%; margin: 0; overflow: hidden; background: #000; color: #fff; font-family: sans-serif; text-align: center; }
   video { width: 100%; height: 100%; background: #000; }
-  #status { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 24px; background: rgba(0,0,0,0.7); padding: 15px 30px; border-radius: 8px; pointer-events: none; }
+  #status { position: absolute; top: 50%; left: 50%; -webkit-transform: translate(-50%, -50%); transform: translate(-50%, -50%); font-size: 24px; background: rgba(0,0,0,0.7); padding: 15px 30px; border-radius: 8px; pointer-events: none; }
   #next { display: none; position: absolute; right: 3%; bottom: 14%; padding: 18px 30px; text-align: left; background: rgba(20,20,26,.94); border: 3px solid #f47521; border-radius: 10px; font-size: 26px; }
   #next b { color: #f47521; }
   #next small { display: block; margin-top: 8px; font-size: 18px; color: #bbb; }
+  #dbg { display: none; position: absolute; left: 10px; right: 10px; bottom: 10px; padding: 8px 12px; text-align: left; font-size: 16px; color: #9f9; background: rgba(0,0,0,.8); border-radius: 6px; white-space: pre-wrap; }
 </style>
 </head>
 <body>
   <div id="status">Conectando con el servidor local...</div>
   <video id="v" controls autoplay style="display:none;"></video>
   <div id="next"><b id="nt">Siguiente episodio</b><small id="nh"></small></div>
+  <div id="dbg"></div>
 
 <script>
-  // Momento en que aparece el botón (segundos) para episodios de 20 a 30 min. Cámbialo a tu gusto.
-  var CREDITS_AT = 21 * 60 + 30;
+  var CREDITS_AT = 21 * 60 + 30;   // segundos en que aparece "Siguiente episodio" (episodios de 20-30 min)
+  var MAX_ROUNDS = 3;              // cuántas veces pedimos más servidores si fallan
 
   function $(id) { return document.getElementById(id); }
   function qs(k) {
@@ -28,22 +30,57 @@
   }
 
   var ep = qs('ep');
-  var maxN = parseInt(qs('max'), 10) || 0;
-  var em = ep.match(/^(.*)\/(\d+)\/?$/);            // .../media/<anime>/<número>
-  var base = em ? em[1] : '';
-  var curN = em ? parseInt(em[2], 10) : 0;
-  var nextN = (em && maxN && curN < maxN) ? curN + 1 : 0;   // 0 = no hay siguiente
+  var list = [];
+  try { list = JSON.parse(sessionStorage.getItem('epsList') || '[]'); } catch (e) {}
+  var curI = -1, li;
+  for (li = 0; li < list.length; li++) { if (list[li].url === ep) { curI = li; break; } }
+  var nextEp = (curI >= 0 && curI < list.length - 1) ? list[curI + 1] : null;
+  var nextN = nextEp ? nextEp.n : 0;
+  var nextUrl = nextEp ? nextEp.url : '';
 
-  var statusDiv = $('status'), videoPlayer = $('v'), nextBox = $('next');
-  var playable = [], idx = 0;
+  var statusDiv = $('status'), videoPlayer = $('v'), nextBox = $('next'), dbgBox = $('dbg');
+  var playable = [], idx = 0, tried = [], rounds = 0;
   var shown = false, dismissed = false, prefetched = false, timer = null;
+  var wd = null, dbgTimer = null, dbgOn = false, evs = [];
+  var waitMsg = '', waitStart = 0;
+
+  /* ── Mensaje de espera con segundos ── */
+  function setWait(msg) {
+    waitMsg = msg; waitStart = Date.now();
+    statusDiv.style.display = 'block';
+    statusDiv.innerText = msg + ' (0 s)';
+  }
+  setInterval(function () {
+    if (waitMsg) { statusDiv.innerText = waitMsg + ' (' + Math.round((Date.now() - waitStart) / 1000) + ' s)'; }
+  }, 1000);
+  function setStatus(msg) { waitMsg = ''; statusDiv.style.display = 'block'; statusDiv.innerText = msg; }
+
+  /* ── Diagnóstico ── */
+  function log(s) { evs.push(s); if (evs.length > 12) { evs.shift(); } }
+  function showDbg(on) { dbgOn = on; dbgBox.style.display = on ? 'block' : 'none'; }
+  setInterval(function () {
+    if (!dbgOn) { return; }
+    var v = videoPlayer, s = playable[idx];
+    dbgBox.innerText = 'servidor: ' + (s ? s.name : '-') + ' | readyState ' + v.readyState + ' | networkState ' + v.networkState +
+      ' | error ' + (v.error ? v.error.code : '-') + ' | duración ' + v.duration + ' | tiempo ' + Math.round(v.currentTime) + '\n' +
+      evs.join(' > ');
+  }, 500);
+
+  var EV = ['loadstart', 'loadedmetadata', 'loadeddata', 'canplay', 'playing', 'waiting', 'stalled', 'suspend', 'abort', 'error', 'ended'];
+  for (var q = 0; q < EV.length; q++) {
+    (function (n) {
+      videoPlayer.addEventListener(n, function () {
+        log(n);
+        if (n === 'loadedmetadata') { clearTimeout(wd); clearTimeout(dbgTimer); if (dbgOn && !manualDbg) { showDbg(false); } }
+      });
+    })(EV[q]);
+  }
+  var manualDbg = false;
 
   /* ── Siguiente episodio ── */
   function goNext() {
-    // replace: así "Atrás" vuelve a la lista de episodios y no al capítulo anterior
-    location.replace('player.html?ep=' + encodeURIComponent(base + '/' + nextN) + '&max=' + maxN);
+    location.replace('player.html?ep=' + encodeURIComponent(nextUrl));
   }
-
   function showNext() {
     if (shown) { return; }
     shown = true;
@@ -51,7 +88,6 @@
     $('nh').innerText = 'OK: reproducir ahora  |  Atrás: cancelar';
     nextBox.style.display = 'block';
   }
-
   function countdown(sec) {
     clearInterval(timer);
     function tick() {
@@ -62,23 +98,20 @@
     tick();
     timer = setInterval(tick, 1000);
   }
-
   function dismiss() {
     clearInterval(timer);
     nextBox.style.display = 'none';
     shown = false;
     dismissed = true;
   }
-
-  // Le pide al servidor que vaya preparando el siguiente episodio mientras ves este.
   function prefetch() {
     var x = new XMLHttpRequest();
-    x.open('GET', '/api/stream?url=' + encodeURIComponent(base + '/' + nextN));
+    x.open('GET', '/api/stream?url=' + encodeURIComponent(nextUrl));
     x.send();
   }
 
   videoPlayer.ontimeupdate = function () {
-    if (!nextN || dismissed) { return; }
+    if (!nextUrl || dismissed) { return; }
     var d = videoPlayer.duration, t = videoPlayer.currentTime;
     if (!d || !isFinite(d)) { return; }
     var trigger = (d >= 1200 && d <= 1800) ? CREDITS_AT : d - 90;
@@ -86,27 +119,75 @@
     if (!prefetched && t >= trigger - 120) { prefetched = true; prefetch(); }
     if (t >= trigger) { showNext(); }
   };
-
   videoPlayer.onended = function () {
-    if (nextN && !dismissed) { showNext(); countdown(5); }
+    if (nextUrl && !dismissed) { showNext(); countdown(5); }
   };
 
-  /* ── Servidores: si uno falla, pasa al siguiente ── */
+  /* ── Servidores ── */
   function intentarServidor() {
-    if (idx >= playable.length) {
-      videoPlayer.style.display = 'none';
-      statusDiv.style.display = 'block';
-      statusDiv.innerText = 'Ningún servidor pudo reproducirse.';
-      return;
-    }
+    if (idx >= playable.length) { pedirMas(); return; }
+    var s = playable[idx];
+    if (tried.indexOf(s.name) < 0) { tried.push(s.name); }
+    waitMsg = '';
     statusDiv.style.display = 'none';
     videoPlayer.style.display = 'block';
-    videoPlayer.src = playable[idx].src;
+    log('servidor ' + s.name);
+    var old = videoPlayer.getElementsByTagName('source');
+    while (old.length) { videoPlayer.removeChild(old[0]); }
+    videoPlayer.removeAttribute('src');
+    var so = document.createElement('source');
+    so.type = /\.m3u8$/.test(s.src.split('?')[0]) ? 'application/x-mpegURL' : 'video/mp4';
+    so.onerror = function () { clearTimeout(wd); log('source error'); idx++; intentarServidor(); };
+    so.src = s.src;
+    videoPlayer.appendChild(so);
+    videoPlayer.load();
     videoPlayer.play();
-  }
-  videoPlayer.onerror = function () { idx++; intentarServidor(); };
 
-  /* ── Control remoto LG: OK=13, Atrás=461, Play=415, Pausa=19, Adelantar=417, Retroceder=412 ── */
+    // Si en 15 s no llegan ni los datos básicos del vídeo, probamos otro servidor.
+    clearTimeout(wd); clearTimeout(dbgTimer);
+    dbgTimer = setTimeout(function () { if (videoPlayer.readyState < 1) { showDbg(true); } }, 6000);
+    wd = setTimeout(function () {
+      if (videoPlayer.readyState < 1) { log('sin datos en 15 s'); idx++; intentarServidor(); }
+    }, 45000);
+  }
+  videoPlayer.onerror = function () { clearTimeout(wd); idx++; intentarServidor(); };
+
+  function pedirMas() {
+    videoPlayer.style.display = 'none';
+    if (rounds >= MAX_ROUNDS) { setStatus('Ningún servidor pudo reproducirse.'); return; }
+    loadServers(tried.join(','));
+  }
+
+  function loadServers(skip) {
+    rounds++;
+    setWait(skip ? 'Probando otro servidor...' : 'Extrayendo video...');
+    var x = new XMLHttpRequest();
+    x.open('GET', '/api/stream?url=' + encodeURIComponent(ep) + (skip ? '&skip=' + encodeURIComponent(skip) : ''));
+    x.timeout = 90000;
+    x.onload = function () {
+      if (x.status < 200 || x.status >= 300) {
+        setStatus(skip ? 'No quedan más servidores que probar.' : 'Error de la API (' + x.status + ').');
+        return;
+      }
+      var j = null, i;
+      try { j = JSON.parse(x.responseText); } catch (e) {}
+      var list = (j && j.servers) || [];
+      playable = []; idx = 0;
+      for (i = 0; i < list.length; i++) {
+        if (list[i].playable && list[i].src && tried.indexOf(list[i].name) < 0) { playable.push(list[i]); }
+      }
+      if (!playable.length) {
+        setStatus(tried.length ? 'No quedan más servidores que probar.' : 'Ningún servidor reproducible fue encontrado.');
+        return;
+      }
+      intentarServidor();
+    };
+    x.onerror = function () { setStatus('No se pudo conectar con la PC.'); };
+    x.ontimeout = function () { setStatus('La PC tardó demasiado en responder.'); };
+    x.send();
+  }
+
+  /* ── Control remoto LG: OK=13, Atrás=461, Play=415, Pausa=19, Adelantar=417, Retroceder=412, Rojo=403 ── */
   document.addEventListener('keydown', function (e) {
     var v = videoPlayer, k = e.keyCode;
     if (shown) {
@@ -114,6 +195,7 @@
       if (k === 461 || k === 27 || k === 8) { e.preventDefault(); dismiss(); return; }
     }
     switch (k) {
+      case 403: manualDbg = !dbgOn; showDbg(!dbgOn); break;
       case 415: v.play(); break;
       case 19: v.pause(); break;
       case 417: v.currentTime += 30; break;
@@ -123,32 +205,8 @@
     }
   });
 
-  /* ── Carga del episodio ── */
-  if (!ep) {
-    statusDiv.innerText = 'Falta el episodio. Elígelo desde el menú.';
-  } else {
-    statusDiv.innerText = 'Extrayendo video (puede tardar hasta 30 s)...';
-    var x = new XMLHttpRequest();
-    x.open('GET', '/api/stream?url=' + encodeURIComponent(ep));
-    x.timeout = 60000;
-    x.onload = function () {
-      if (x.status >= 200 && x.status < 300) {
-        var response;
-        try { response = JSON.parse(x.responseText); } catch (e) { response = null; }
-        var list = (response && response.servers) || [];
-        for (var i = 0; i < list.length; i++) {
-          if (list[i].playable && list[i].src) { playable.push(list[i]); }
-        }
-        if (playable.length === 0) { statusDiv.innerText = 'Ningún servidor reproducible fue encontrado.'; }
-        else { intentarServidor(); }
-      } else {
-        statusDiv.innerText = 'Error de la API (' + x.status + ').';
-      }
-    };
-    x.onerror = function () { statusDiv.innerText = 'No se pudo conectar con la PC.'; };
-    x.ontimeout = function () { statusDiv.innerText = 'La PC tardó demasiado en responder.'; };
-    x.send();
-  }
+  if (!ep) { setStatus('Falta el episodio. Elígelo desde el menú.'); }
+  else { loadServers(''); }
 </script>
 </body>
 </html>

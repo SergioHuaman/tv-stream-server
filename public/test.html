@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Prueba</title>
+<style>
+  html, body { height: 100%; margin: 0; background: #000; color: #9f9; font: 24px sans-serif; }
+  video { width: 70%; height: 60%; background: #111; }
+  #log { padding: 12px; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+  <video id="v" src="/test.mp4" controls autoplay></video>
+  <div id="log">Prueba de vídeo. Atrás para salir.</div>
+<script>
+  var v = document.getElementById('v'), log = document.getElementById('log'), evs = [];
+  var EV = ['loadstart', 'loadedmetadata', 'canplay', 'playing', 'waiting', 'stalled', 'error', 'ended'];
+  for (var i = 0; i < EV.length; i++) { (function (n) { v.addEventListener(n, function () { evs.push(n); }); })(EV[i]); }
+  setInterval(function () {
+    log.innerText = 'readyState ' + v.readyState + ' | error ' + (v.error ? v.error.code : '-') +
+      ' | duración ' + v.duration + ' | tiempo ' + Math.round(v.currentTime) + '\n' + evs.join(' > ');
+  }, 500);
+  document.addEventListener('keydown', function (e) {
+    if (e.keyCode === 461 || e.keyCode === 27) { history.back(); }
+    if (e.keyCode === 13) { if (v.paused) { v.play(); } else { v.pause(); } }
+  });
+</script>
+</body>
+</html>
