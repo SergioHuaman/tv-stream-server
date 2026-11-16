@@ -26,15 +26,23 @@
     x.onerror = fail; x.ontimeout = fail;
     x.send();
   }
+  var tries = 0, retryTimer = null;
   function connect(addr) {
-    $('msg').innerText = 'Conectando a ' + addr + '...';
+    clearTimeout(retryTimer);
+    $('msg').innerText = tries ? 'Esperando a la PC... (intento ' + tries + ')' : 'Conectando a ' + addr + '...';
     probe(addr, function () {
       localStorage.setItem(KEY, addr);
       location.href = 'http://' + addr + '/';
     }, function () {
-      $('msg').innerText = 'No se pudo conectar a ' + addr;
+      tries++;
       $('cfg').style.display = 'block';
-      $('ip').value = addr; $('ip').focus();
+      $('ip').value = addr;
+      if (tries < 60) {   // reintenta cada 5 s durante unos 5 minutos
+        $('msg').innerText = 'La PC aún no responde (' + addr + '). Reintentando...';
+        retryTimer = setTimeout(function () { connect(addr); }, 5000);
+      } else {
+        $('msg').innerText = 'No se pudo conectar a ' + addr + '. ¿Está encendida la PC?';
+      }
     });
   }
   $('go').onclick = function () { connect($('ip').value.replace(/^\s+|\s+$/g, '')); };

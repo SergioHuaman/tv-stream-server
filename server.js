@@ -54,22 +54,29 @@ async function probeDirect(url, referer) {
         headers: { 'User-Agent': CONFIG.userAgent, Referer: referer, Range: 'bytes=0-524287' },
         signal: AbortSignal.timeout(35000),
       });
+      const ct = (r.headers.get('content-type') || '').toLowerCase();
+      if (/^(text|image)\//.test(ct)) {
+        console.log(`[probe] ${host} no devuelve un vídeo (${ct}); lo descarto`);
+        await r.body?.cancel();
+        return { ok: false, needs: false, hls: false };
+      }
+      const hls = /mpegurl/.test(ct) || /\.m3u8(\?|$)/i.test(url);
       let needs = false;
-      if (r.status === 206 && /\.mp4(\?|$)/i.test(url)) {
+      if (r.status === 206 && !hls && /\.mp4(\?|$)/i.test(url)) {
         const info = sniffMp4(Buffer.from(await r.arrayBuffer()));
         console.log('[probe] formato:', info.text);
         needs = info.needs;
       } else {
         await r.body?.cancel();
       }
-      console.log('[probe]', host, '->', r.status);
-      return { ok: r.status === 200 || r.status === 206, needs };
+      console.log('[probe]', host, '->', r.status, ct);
+      return { ok: r.status === 200 || r.status === 206, needs, hls };
     } catch (e) {
       const c = e.cause;
       console.log(`[probe] ${host} intento ${i + 1} falló: ${c?.code ?? ''} ${c?.message ?? e.message}`);
     }
   }
-  return { ok: false, needs: false };
+  return { ok: false, needs: false, hls: false };
 }
 
 function sniffMp4(buf) {
@@ -135,22 +142,32 @@ async function initBrowser() {
   blocker = await PlaywrightBlocker.fromPrebuiltAdsAndTracking(crossFetch);
 }
 
-async function preparePage(page, foundMedia) {
-  // 1) Adblock (registra su propio page.route internamente).
+async function preparePage(page, foundMedia, dbg = false) {
   await blocker.enableBlockingInPage(page);
 
-  // 2) Filtro propio: el route registrado al ÚLTIMO corre primero;
-  //    route.fallback() pasa la petición al adblocker.
   await page.route('**/*', (route) => {
     const type = route.request().resourceType();
     if (['image', 'font', 'media'].includes(type)) return route.abort();
     return route.fallback();
   });
 
-  // 3) Sniffing: 'request' se dispara antes del abort, así vemos la URL del vídeo igualmente.
   page.on('request', (req) => {
     const u = req.url();
     if (/^https?:/.test(u) && (MEDIA_RE.test(u) || req.resourceType() === 'media')) foundMedia.add(u);
+  });
+
+  // Reconoce listas HLS y vídeos por el TIPO que declara el servidor, aunque la URL no tenga extensión.
+  let nlog = 0;
+  page.on('response', (r) => {
+    try {
+      const ct = (r.headers()['content-type'] || '').toLowerCase();
+      const u = r.url();
+      if (/mpegurl/.test(ct) || /^video\/(mp4|webm)/.test(ct)) foundMedia.add(u);
+      if (dbg && nlog < 80 && !/^(image|font)\//.test(ct) && !/\.(css|woff2?|png|jpe?g|gif|svg|ico)(\?|$)/i.test(u)) {
+        nlog++;
+        console.log(`[net] ${r.status()} ${ct || '-'} ${r.request().resourceType()} ${u.slice(0, 150)}`);
+      }
+    } catch { /* la página ya se cerró */ }
   });
 }
 
@@ -172,15 +189,22 @@ const inFrames = (page, fn) =>
 async function resolveEmbed(openPage, embedUrl, referer) {
   const page = await openPage();
   const found = new Set();
-  const log = (...a) => console.log(`[embed ${new URL(embedUrl).hostname}]`, ...a);
+  const host = new URL(embedUrl).hostname;
+  const dbg = Boolean(process.env.DEBUG_EMBED) && host.includes(process.env.DEBUG_EMBED);
+  const log = (...a) => console.log(`[embed ${host}]`, ...a);
   try {
-    await preparePage(page, found);
+    await preparePage(page, found, dbg);
     const resp = await page.goto(embedUrl, { waitUntil: 'domcontentloaded', timeout: 12000, referer });
-    log('HTTP', resp?.status(), '| título:', await page.title());
+    const title = await page.title();
+    log('HTTP', resp?.status(), '| título:', title);
+
+    // MP4Upload manda a su portada cuando el archivo ya no existe.
+    if (/mp4upload/i.test(host) && (/Easy Way to Backup/i.test(title) || /^https?:\/\/(www\.)?mp4upload\.com\/?$/i.test(page.url()))) {
+      log('el archivo ya no existe en este servidor');
+      return null;
+    }
     await jitter(800, 1500);
 
-    // Hasta 4 intentos: clic (el 1.º suele disparar un pop-up que cerramos)
-    // + play() mudo por script (permitido sin gesto del usuario).
     for (let i = 0; i < 3 && found.size === 0; i++) {
       await page.mouse.click(683, 384).catch(() => {});
       await inFrames(page, () => {
@@ -198,9 +222,10 @@ async function resolveEmbed(openPage, embedUrl, referer) {
       srcs.filter((s) => s && /^https?:/.test(s)).forEach((s) => found.add(s));
     }
 
-    // Respaldo 2: URL escrita en el HTML.
+    // Respaldo 2: URL de vídeo escrita en el HTML. La extensión debe estar al FINAL de la ruta,
+    // para no confundir el dominio "mp4upload.com" con un archivo .mp4.
     if (found.size === 0) {
-      const m = (await page.content()).match(/https?:\/\/[^"'\s\\]+\.(?:mp4|m3u8)[^"'\s\\]*/i);
+      const m = (await page.content()).match(/https?:\/\/[^"'\s\\<>]+?\.(?:mp4|m3u8)(?:\?[^"'\s\\<>]*)?(?=["'\s\\<>]|$)/i);
       if (m) found.add(m[0]);
     }
     log('resultado:', pickMedia(found) ?? 'nada');
@@ -249,15 +274,20 @@ async function fetchServerList(episodeUrl) {
   return { provider: data?.source ?? payload?.source, servers };
 }
 
-async function buildEpisode(episodeUrl, skip = []) {
-  const { provider, servers } = await fetchServerList(episodeUrl);
+async function buildEpisode(episodeUrl, skip = [], lang = '', quality = 'auto', night = false) {
+  const { provider, servers: allServers } = await fetchServerList(episodeUrl);
+
+  // Idioma pedido (SUB/DUB); si no existe, el primero disponible.
+  const langs = [...new Set(allServers.map((s) => s.lang).filter(Boolean))];
+  const useLang = langs.includes(lang) ? lang : (langs[0] ?? null);
+  const servers = useLang ? allServers.filter((s) => s.lang === useLang) : allServers;
+  const forcedH = /^\d+$/.test(quality) ? Number(quality) : 0;   // 0 = automático
 
   // Los que ya son .mp4/.m3u8 no necesitan navegador.
   for (const s of servers) {
     s.direct = MEDIA_RE.test(s.url) ? s.url : null;
   }
 
-  // El resto (embeds) se resuelven con Playwright, solo los mejores y EN PARALELO.
   const toResolve = servers
     .filter((s) => !s.direct && !NOT_RESOLVABLE_RE.test(s.url) && !skip.includes(s.name))
     .sort((a, b) => b.score - a.score)
@@ -271,8 +301,6 @@ async function buildEpisode(episodeUrl, skip = []) {
     });
     try {
       const openPage = attachPopupKiller(context);
-      // De mejor a peor servidor, y paramos en cuanto uno da enlace directo.
-      // Si falla en la TV, el reproductor pide el siguiente con ?skip=
       for (const s of toResolve) {
         s.direct = await resolveEmbed(openPage, s.url, episodeUrl);
         if (s.direct) {
@@ -282,6 +310,7 @@ async function buildEpisode(episodeUrl, skip = []) {
             s.direct = null;
           } else {
             s.transcode = CONFIG.transcode === 'always' || (CONFIG.transcode === 'auto' && p.needs);
+            s.hls = p.hls;
             if (s.transcode) console.log('[probe] este vídeo se convertirá a H.264 para la TV');
           }
         }
@@ -294,20 +323,22 @@ async function buildEpisode(episodeUrl, skip = []) {
 
   const result = servers.map((s) => {
     const playable = Boolean(s.direct);
+    // Si el usuario eligió una calidad concreta (1080/720/480), siempre pasa por la conversión.
+    const transcode = playable && (Boolean(s.transcode) || ((forcedH > 0 || night) && CONFIG.transcode !== 'never'));
     let src = null;
     if (playable) {
       knownMediaHosts.add(new URL(s.direct).hostname);
       const q = `u=${encodeURIComponent(s.direct)}&r=${encodeURIComponent(s.url)}`;
-      src = s.transcode
-        ? `/hls/${newHlsSession(`http://127.0.0.1:${CONFIG.port}/api/proxy?${q}`)}/index.m3u8`
-        : `/v/video.${/\.m3u8(\?|$)/i.test(s.direct) ? 'm3u8' : 'mp4'}?${q}`;
+      src = transcode
+        ? `/hls/${newHlsSession(`http://127.0.0.1:${CONFIG.port}/api/proxy?${q}`, forcedH || CONFIG.maxHeight, night)}/index.m3u8`
+        : `/v/video.${(s.hls || /\.m3u8(\?|$)/i.test(s.direct)) ? 'm3u8' : 'mp4'}?${q}`;
     }
     return {
       name: s.name,
       lang: s.lang,
       quality: s.quality || qualityOf(s.direct ?? '') || null,
       playable,
-      transcoded: Boolean(s.transcode),
+      transcoded: transcode,
       embed: s.url,
       direct: s.direct,
       src,
@@ -315,16 +346,16 @@ async function buildEpisode(episodeUrl, skip = []) {
     };
   });
 
-  // Orden: reproducibles primero → mayor calidad → mayor prioridad de servidor.
   result.sort((a, b) => Number(b.playable) - Number(a.playable) || (b.quality ?? 0) - (a.quality ?? 0) || b.score - a.score);
 
-  return { success: true, provider: provider ?? 'desconocido', episodeUrl, servers: result };
+  return { success: true, provider: provider ?? 'desconocido', episodeUrl, lang: useLang, langs, servers: result };
 }
 
 /* ───────────────────────── API EXPRESS ───────────────────────── */
 
 const app = express();
 app.use(cors());
+app.use(express.json({ limit: '2mb' }));
 
 const PUBLIC_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'public');
 console.log('[static] sirviendo archivos desde:', PUBLIC_DIR);
@@ -332,6 +363,17 @@ console.log('[static] sirviendo archivos desde:', PUBLIC_DIR);
 app.use(express.static(PUBLIC_DIR, {
   setHeaders: (res) => res.setHeader('Cache-Control', 'no-store'),
 }));
+
+// Empieza a convertir ya el episodio siguiente, pero solo si no hay otra conversión en curso
+// (así nunca le quita recursos al episodio que estás viendo).
+function warmUp(data) {
+  const s = data.servers.find((x) => x.playable && x.src?.startsWith('/hls/'));
+  if (!s) return;
+  const sess = hls.get(s.src.split('/')[2]);
+  if (!sess || sess.run) return;
+  const busy = [...hls.values()].some((o) => o !== sess && o.run && !o.run.done);
+  if (!busy) { console.log('[hls] precalentando el siguiente episodio'); startRun(sess, 0); }
+}
 
 app.get('/api/stream', async (req, res) => {
   let url;
@@ -342,19 +384,27 @@ app.get('/api/stream', async (req, res) => {
     return res.status(400).json({ error: 'Falta el parámetro url o no es válido' });
   }
   const skip = String(req.query.skip ?? '').split(',').filter(Boolean);
-  const key = url.href + '|' + skip.join(',');
+  const lang = String(req.query.lang ?? '').toUpperCase().slice(0, 4);
+  const q = /^(auto|\d{3,4})$/.test(String(req.query.q ?? '')) ? String(req.query.q) : 'auto';
+  const night = req.query.n === '1';
+  const warm = req.query.warm === '1';
+  const key = url.href + '|' + skip.join(',') + '|' + lang + '|' + q + '|' + (night ? 'n' : '');
 
   try {
     const hit = cache.get(key);
-    if (hit && Date.now() - hit.t < CONFIG.cacheTtlMs) return res.json(hit.data);
+    if (hit && Date.now() - hit.t < CONFIG.cacheTtlMs) {
+      if (warm) warmUp(hit.data);
+      return res.json(hit.data);
+    }
 
     console.log(`[TV] Solicitando: ${url.href}${skip.length ? ' (sin ' + skip.join(', ') + ')' : ''}`);
-    const data = await limit(() => buildEpisode(url.href, skip));
+    const data = await limit(() => buildEpisode(url.href, skip, lang, q, night));
 
     if (data.servers.length === 0) {
       return res.status(404).json({ error: 'No se encontraron servidores de video.' });
     }
     if (data.servers.some((s) => s.playable)) cache.set(key, { t: Date.now(), data });
+    if (warm) warmUp(data);
     res.json(data);
   } catch (err) {
     const status = err.response?.status;
@@ -440,26 +490,62 @@ app.get(['/api/proxy', '/v/:name'], async (req, res) => {
   }
 });
 
+// Tiempos de opening/ending (AniSkip). Si no hay datos o falla, responde found:false y no pasa nada.
+const skipCache = new Map();
+app.get('/api/skip', async (req, res) => {
+  const mal = Number(req.query.mal);
+  const n = Number(req.query.ep);
+  const len = Math.round(Number(req.query.len) || 0);
+  if (!mal || !(n >= 0)) return res.json({ found: false });
+
+  const key = `${mal}/${n}/${len}`;
+  const hit = skipCache.get(key);
+  if (hit && Date.now() - hit.t < 6 * 3600 * 1000) return res.json(hit.data);
+
+  let out = { found: false };
+  try {
+    const types = ['op', 'ed', 'mixed-op', 'mixed-ed', 'recap'].map((t) => `types[]=${t}`).join('&');
+    const r = await axios.get(`https://api.aniskip.com/v2/skip-times/${mal}/${n || 1}?${types}&episodeLength=${len}`, {
+      timeout: 8000,
+      validateStatus: () => true,
+    });
+    if (r.status === 200 && r.data?.found && Array.isArray(r.data.results)) {
+      const items = r.data.results
+        .map((x) => ({ type: String(x.skipType), start: Number(x.interval?.startTime), end: Number(x.interval?.endTime) }))
+        .filter((x) => isFinite(x.start) && isFinite(x.end) && x.end > x.start);
+      if (items.length) out = { found: true, items };
+    }
+    console.log(`[skip] mal=${mal} ep=${n} -> ${out.found ? out.items.map((i) => i.type).join(',') : 'sin datos'}`);
+  } catch (e) {
+    console.log('[skip] error:', e.message);
+  }
+  skipCache.set(key, { t: Date.now(), data: out });
+  res.json(out);
+});
+
 app.get('/api/ping', (req, res) => res.json({ ok: true }));
 
-// Reenvía /api/r/v1/anime/... al resolvedor inyectando la apiKey.
+
 app.get('/api/r/*', async (req, res) => {
-  const path = req.params[0];
-  if (!/^v1\/anime\/[a-z0-9\-\/]+$/i.test(path) || path.includes('image-proxy')) {
+  const p = req.params[0];
+  if (!/^v1\/anime\/[a-z0-9\-\/]+$/i.test(p) || p.includes('image-proxy')) {
     return res.status(400).json({ error: 'ruta no permitida' });
   }
+  const { kids, ...rest } = req.query;
   try {
-    const r = await axios.get(`${CONFIG.resolverUrl}/api/${path}`, {
-      params: { ...req.query, apiKey: CONFIG.apiKey },
+    const r = await axios.get(`${CONFIG.resolverUrl}/api/${p}`, {
+      params: { ...rest, apiKey: CONFIG.apiKey },
       timeout: 20000,
     });
+    if (kids === '1' && Array.isArray(r.data?.data?.results)) {
+      r.data.data.results = await kidsFilter(r.data.data.results);
+    }
     res.json(r.data);
   } catch (err) {
     res.status(err.response?.status ?? 502).json({ error: err.message });
   }
 });
 
-// Portadas: las pide la TV a nuestro servidor y este las trae del resolvedor.
 app.get('/api/img', async (req, res) => {
   try {
     const u = new URL(String(req.query.u ?? ''));
@@ -605,14 +691,15 @@ async function discoverGenres() {
 }
 
 async function buildIndex() {
+  let saved = null;
   try {   // 1) caché en disco
-    const saved = JSON.parse(await fs.readFile(CACHE_FILE, 'utf8'));
+    saved = JSON.parse(await fs.readFile(CACHE_FILE, 'utf8'));
     if (saved.items?.length && Date.now() - saved.built < CACHE_MAX_AGE) {
       db = saved;
       console.log(`[index] desde caché: ${db.items.length} animes, ${db.genres.length} géneros`);
       return;
     }
-  } catch { /* sin caché */ }
+  } catch { saved = null; }
 
   // 2) descarga del catálogo completo, 6 páginas en paralelo
   console.log('[index] descargando catálogo completo...');
@@ -627,7 +714,11 @@ async function buildIndex() {
     if (end) break;
     await sleep(300);
   }
-  if (!items.length) { console.log('[index] no se pudo descargar el catálogo'); return; }
+  if (!items.length) {
+    if (saved?.items?.length) { db = saved; console.log('[index] no pude actualizar; uso la caché anterior'); }
+    else { console.log('[index] no se pudo descargar el catálogo'); }
+    return;
+  }
 
   const genres = await discoverGenres();
   db = { items, genres, built: Date.now() };
@@ -646,32 +737,61 @@ const shuffle = (a) => {
 
 app.get('/api/home', async (req, res) => {
   await indexReady;
-  const items = db.items;
+  const kids = req.query.kids === '1';
+  const items = kids ? await kidsFilter(db.items) : db.items;
   if (!items.length) return res.status(503).json({ error: 'catálogo vacío' });
 
   const rows = [
     { title: 'Recién agregados', items: items.slice(0, 24) },
     { title: 'Para descubrir', items: shuffle(items.slice(24)).slice(0, 24) },
   ];
-  // Filas por tipo (película, ONA, OVA...) además del más común.
   const count = {};
   items.forEach((c) => { if (c.type) count[c.type] = (count[c.type] || 0) + 1; });
   Object.keys(count).sort((a, b) => count[b] - count[a]).slice(1, 3).forEach((t) => {
     if (count[t] >= 6) rows.push({ title: t, items: items.filter((c) => c.type === t).slice(0, 24) });
   });
-  res.json({ total: items.length, genres: db.genres, hero: items.slice(0, 8), rows });
+  const genres = kids ? db.genres.filter((g) => !KID_BLOCK.includes(g.slug)) : db.genres;
+  res.json({ total: items.length, genres, hero: items.slice(0, 8), rows });
 });
 
 app.get('/api/list', async (req, res) => {
   await indexReady;
+  let items = db.items;
+  if (req.query.kids === '1') items = await kidsFilter(items);
+
+  const type = String(req.query.type ?? '');
+  const letter = String(req.query.letter ?? '').toUpperCase();
+  const sort = String(req.query.sort ?? 'new');
+
+  const types = {};
+  items.forEach((c) => { if (c.type) types[c.type] = (types[c.type] || 0) + 1; });
+
+  if (type) items = items.filter((c) => c.type === type);
+  if (letter) {
+    items = items.filter((c) => {
+      const f = normText(c.title).charAt(0).toUpperCase();
+      return letter === '#' ? !/[A-Z]/.test(f) : f === letter;
+    });
+  }
+  if (sort === 'az' || sort === 'za') {
+    items = items.slice().sort((a, b) => normText(a.title).localeCompare(normText(b.title)));
+    if (sort === 'za') items.reverse();
+  }
+
   const off = Math.max(0, Number(req.query.offset) || 0);
   const lim = Math.min(120, Number(req.query.limit) || 60);
-  res.json({ total: db.items.length, items: db.items.slice(off, off + lim), hasMore: off + lim < db.items.length });
+  res.json({
+    total: items.length,
+    items: items.slice(off, off + lim),
+    hasMore: off + lim < items.length,
+    types: off === 0 ? Object.keys(types).sort((a, b) => types[b] - types[a]) : undefined,
+  });
 });
 
 app.get('/api/genres', async (req, res) => {
   await indexReady;
-  res.json({ genres: db.genres });
+  const kids = req.query.kids === '1';
+  res.json({ genres: kids ? db.genres.filter((g) => !KID_BLOCK.includes(g.slug)) : db.genres });
 });
 
 app.get('/api/search', async (req, res) => {
@@ -685,13 +805,12 @@ app.get('/api/search', async (req, res) => {
       results = (await getCatalogIndex()).filter((c) => normText(c.title).includes(nq));
       via = 'catalogo-local';
     }
+    if (req.query.kids === '1') results = await kidsFilter(results);
     res.json({ via, results: results.slice(0, 40) });
   } catch (err) {
     res.status(502).json({ error: err.message });
   }
 });
-
-
 
 app.get('/api/probe', async (req, res) => {
   const url = String(req.query.url ?? '');
@@ -731,64 +850,85 @@ app.get('/test.mp4', async (req, res) => {
   }
 });
 
-/* ───────────── CONVERSIÓN AL VUELO (ffmpeg → HLS) ───────────── */
+/* ───────────── CONVERSIÓN AL VUELO (ffmpeg → HLS), con saltos ───────────── */
 const FFMPEG = process.env.FFMPEG_PATH || ffmpegPath || 'ffmpeg';
 const HLS_DIR = path.join(os.tmpdir(), 'tv-hls');
-const SEG = 6;                       // segundos por trozo
-const hls = new Map();               // token → sesión
+const SEG = 6;      // segundos por trozo
+const AHEAD = 8;    // si piden un trozo a más de 8 trozos (~48 s) de donde trabaja ffmpeg, reiniciamos ahí
+const hls = new Map();
 const exists = (f) => fs.access(f).then(() => true, () => false);
+const segName = (i) => `seg${String(i).padStart(5, '0')}.ts`;
 
-function newHlsSession(input) {
+function newHlsSession(input, maxHeight = CONFIG.maxHeight, night = false) {
   const token = crypto.randomBytes(8).toString('hex');
-  hls.set(token, { input, dir: path.join(HLS_DIR, token), proc: null, duration: 0, done: false, lastUse: Date.now(), ready: null });
+  hls.set(token, {
+    input, maxHeight, night, dir: path.join(HLS_DIR, token), run: null, runId: 0,
+    duration: 0, durationP: null, resolveDur: null, rejectDur: null,
+    lastUse: Date.now(), lastRestart: 0,
+  });
   return token;
 }
 
-function startHls(sess) {
-  if (sess.ready) return sess.ready;
-  // Solo una conversión a la vez: paramos las demás (una sola TV).
-  for (const o of hls.values()) if (o !== sess && o.proc && !o.done) o.proc.kill('SIGKILL');
+function stopRun(sess) {
+  const r = sess.run;
+  if (r && !r.done) { r.killed = true; try { r.proc?.kill('SIGKILL'); } catch { /* ya terminó */ } }
+}
 
-  sess.ready = new Promise((resolve, reject) => {
-    fs.mkdir(sess.dir, { recursive: true }).then(() => {
-      const args = [
-        '-hide_banner', '-nostdin',
-        '-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5',
-        '-i', sess.input,                              // lee del proxy local (ya trae Referer y rangos)
-        '-map', '0:v:0', '-map', '0:a:0?',
-        '-vf', `scale=-2:'min(${CONFIG.maxHeight},ih)'`,
-        '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-maxrate', '4M', '-bufsize', '8M',
-        '-profile:v', 'high', '-level', '4.0', '-pix_fmt', 'yuv420p',
-        '-force_key_frames', `expr:gte(t,n_forced*${SEG})`,   // cortes exactos cada SEG segundos
-        '-c:a', 'aac', '-b:a', '128k', '-ac', '2',
-        '-f', 'hls', '-hls_time', String(SEG), '-hls_list_size', '0',
-        '-hls_flags', 'independent_segments',
-        '-hls_segment_filename', path.join(sess.dir, 'seg%05d.ts'),
-        path.join(sess.dir, 'ffmpeg.m3u8'),
-      ];
-      console.log('[hls] iniciando conversión...');
-      const proc = spawn(FFMPEG, args, { windowsHide: true });
-      sess.proc = proc;
-      let buf = '';
-      proc.stderr.on('data', (d) => {
-        buf += d.toString();
-        if (!sess.duration) {
-          // ffmpeg anuncia la duración del vídeo al abrirlo: con eso armamos la lista completa.
-          const m = buf.match(/Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/);
-          if (m) { sess.duration = (+m[1]) * 3600 + (+m[2]) * 60 + parseFloat(m[3]); resolve(sess); }
-        }
-        if (buf.length > 20000) buf = buf.slice(-6000);
-      });
-      proc.on('error', (e) => reject(e));
-      proc.on('close', (code) => {
-        sess.done = true;
-        console.log('[hls] ffmpeg terminó, código', code);
-        if (code !== 0) console.error('[hls] últimas líneas de ffmpeg:\n' + buf.slice(-700));
-        if (!sess.duration) reject(new Error('ffmpeg salió con código ' + code));
-      });
-    }, reject);
-  });
-  return sess.ready;
+// Arranca (o reinicia) ffmpeg desde el trozo startIdx.
+function startRun(sess, startIdx) {
+  for (const o of hls.values()) if (o.run && !o.run.done) stopRun(o);   // una sola conversión activa
+  sess.lastRestart = Date.now();
+  const startSec = startIdx * SEG;
+  const run = { id: ++sess.runId, startIdx, done: false, killed: false, ranToEnd: false, failed: false, proc: null };
+  sess.run = run;
+  if (!sess.durationP) {
+    sess.durationP = new Promise((resolve, reject) => { sess.resolveDur = resolve; sess.rejectDur = reject; });
+    sess.durationP.catch(() => {});
+  }
+
+  fs.mkdir(sess.dir, { recursive: true }).then(() => {
+    if (sess.run !== run || run.killed) return;   // ya lo reemplazaron
+    const args = [
+      '-hide_banner', '-nostdin',
+      '-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5',
+      ...(startSec ? ['-ss', String(startSec)] : []),          // salto de entrada: rápido y preciso al recodificar
+      '-i', sess.input,
+      '-map', '0:v:0', '-map', '0:a:0?',
+      '-vf', `scale=-2:'min(${sess.maxHeight},ih)'`,
+      '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-maxrate', '4M', '-bufsize', '8M',
+      '-profile:v', 'high', '-level', '4.0', '-pix_fmt', 'yuv420p',
+      '-force_key_frames', `expr:gte(t,n_forced*${SEG})`,
+      ...(sess.night ? ['-af', 'acompressor=threshold=0.089:ratio=4:attack=20:release=250:makeup=2'] : []),   // modo noche
+      '-c:a', 'aac', '-b:a', '128k', '-ac', '2',
+      ...(startSec ? ['-output_ts_offset', String(startSec)] : []),   // los tiempos siguen siendo los reales
+      '-f', 'hls', '-hls_time', String(SEG), '-hls_list_size', '0',
+      '-hls_flags', 'independent_segments+temp_file',          // un trozo solo "existe" cuando está completo
+      '-start_number', String(startIdx),
+      '-hls_segment_filename', path.join(sess.dir, 'seg%05d.ts'),
+      path.join(sess.dir, `ff${run.id}.m3u8`),
+    ];
+    console.log(`[hls] conversión desde ${startSec} s (trozo ${startIdx})`);
+    const proc = spawn(FFMPEG, args, { windowsHide: true });
+    run.proc = proc;
+    let buf = '';
+    proc.stderr.on('data', (d) => {
+      buf += d.toString();
+      if (!sess.duration) {
+        const m = buf.match(/Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/);
+        if (m) { sess.duration = (+m[1]) * 3600 + (+m[2]) * 60 + parseFloat(m[3]); sess.resolveDur(); }
+      }
+      if (buf.length > 20000) buf = buf.slice(-6000);
+    });
+    proc.on('error', (e) => { run.done = true; run.failed = true; sess.rejectDur(e); });
+    proc.on('close', (code) => {
+      run.done = true;
+      if (run.killed) return;
+      if (code === 0) { run.ranToEnd = true; return; }
+      run.failed = true;
+      console.error('[hls] ffmpeg falló (código ' + code + '). Últimas líneas:\n' + buf.slice(-700));
+      if (!sess.duration) sess.rejectDur(new Error('ffmpeg salió con código ' + code));
+    });
+  }).catch((e) => { run.done = true; run.failed = true; sess.rejectDur(e); });
 }
 
 // Lista de reproducción completa (con duración), para que la TV muestre la barra y pueda saltar.
@@ -796,49 +936,64 @@ app.get('/hls/:token/index.m3u8', async (req, res) => {
   const sess = hls.get(req.params.token);
   if (!sess) return res.sendStatus(404);
   sess.lastUse = Date.now();
-  try { await startHls(sess); }
-  catch (e) { console.error('[hls] error:', e.message); return res.sendStatus(502); }
+  try {
+    if (!sess.duration) {
+      if (!sess.run || sess.run.done) startRun(sess, 0);
+      await Promise.race([
+        sess.durationP,
+        sleep(60000).then(() => { throw new Error('tiempo agotado leyendo la duración'); }),
+      ]);
+    }
+  } catch (e) {
+    console.error('[hls] error:', e.message);
+    return res.sendStatus(502);
+  }
 
   const n = Math.ceil(sess.duration / SEG);
   const lines = ['#EXTM3U', '#EXT-X-VERSION:3', `#EXT-X-TARGETDURATION:${SEG + 1}`, '#EXT-X-MEDIA-SEQUENCE:0', '#EXT-X-PLAYLIST-TYPE:VOD'];
   for (let i = 0; i < n; i++) {
     const d = i === n - 1 ? sess.duration - SEG * (n - 1) : SEG;
-    lines.push(`#EXTINF:${d.toFixed(3)},`, `seg${String(i).padStart(5, '0')}.ts`);
+    lines.push(`#EXTINF:${d.toFixed(3)},`, segName(i));
   }
   lines.push('#EXT-X-ENDLIST');
   res.setHeader('Cache-Control', 'no-store');
   res.type('application/vnd.apple.mpegurl').send(lines.join('\n') + '\n');
 });
 
-// Trozos de vídeo: si aún no están listos, esperamos a que ffmpeg los termine.
+// Trozos de vídeo. Si piden uno lejano, reiniciamos la conversión ahí.
 app.get('/hls/:token/:file', async (req, res) => {
   const sess = hls.get(req.params.token);
   if (!sess || !/^seg\d{5}\.ts$/.test(req.params.file)) return res.sendStatus(404);
-  sess.lastUse = Date.now();
   const idx = Number(req.params.file.slice(3, 8));
   const file = path.join(sess.dir, req.params.file);
-  const next = path.join(sess.dir, `seg${String(idx + 1).padStart(5, '0')}.ts`);
 
   const t0 = Date.now();
-  while (Date.now() - t0 < 60000) {
-    // Un trozo está completo cuando ffmpeg ya empezó el siguiente, o cuando terminó todo.
-    const complete = sess.done || (await exists(next));
-    const present = await exists(file);
-    if (complete && present) {
+  while (Date.now() - t0 < 90000) {
+    sess.lastUse = Date.now();
+    if (await exists(file)) {
       return res.sendFile(file, { dotfiles: 'allow', headers: { 'Content-Type': 'video/mp2t', 'Cache-Control': 'no-store' } });
     }
-    if (sess.done && !present) return res.sendStatus(404);
-    await sleep(250);
+    const run = sess.run;
+    if (!run || run.done) {
+      if (run?.ranToEnd && idx >= run.startIdx) return res.sendStatus(404);   // más allá del final
+      if (run?.failed) return res.sendStatus(502);
+      startRun(sess, idx);                                                   // no hay conversión activa: empezamos aquí
+    } else if (Date.now() - sess.lastRestart > 3000) {
+      let h = run.startIdx;
+      while (await exists(path.join(sess.dir, segName(h)))) h++;             // primer trozo que falta = donde trabaja ffmpeg
+      if (idx < run.startIdx || idx - h > AHEAD) startRun(sess, idx);        // salto fuera de lo que se está convirtiendo
+    }
+    await sleep(300);
   }
   res.sendStatus(504);
 });
 
-// Limpieza: a los 10 min sin uso se detiene ffmpeg y se borran los archivos temporales.
+// Limpieza: a los 10 min sin uso se detiene ffmpeg y se borran los temporales.
 setInterval(() => {
   const now = Date.now();
   for (const [t, s] of hls) {
     if (now - s.lastUse > 10 * 60 * 1000) {
-      try { s.proc?.kill('SIGKILL'); } catch { /* ya terminó */ }
+      stopRun(s);
       hls.delete(t);
       cache.clear();   // las respuestas guardadas apuntaban a esta sesión
       fs.rm(s.dir, { recursive: true, force: true }).catch(() => {});
@@ -854,12 +1009,191 @@ function ffmpegCheck() {
   p.on('close', (c) => { if (c === 0) console.log('[hls] ffmpeg listo:', out.split('\n')[0]); });
 }
 
+/* ───────────── PERFILES, DATOS EN LA PC, MODO INFANTIL Y NUEVOS EPISODIOS ───────────── */
+const DATA_DIR = path.join(ROOT, 'data');
+const PROFILES_FILE = path.join(DATA_DIR, 'profiles.json');
+const COUNTS_FILE = path.join(DATA_DIR, 'episodes.json');
+const pfile = (id) => path.join(DATA_DIR, `p-${id}.json`);
+const validId = (id) => /^[a-z0-9]{2,12}$/.test(String(id));
+
+async function readJson(file, fallback) {
+  try { return JSON.parse(await fs.readFile(file, 'utf8')); } catch { return fallback; }
+}
+async function writeJson(file, obj) {
+  await fs.mkdir(DATA_DIR, { recursive: true });
+  const tmp = file + '.tmp';
+  await fs.writeFile(tmp, JSON.stringify(obj));
+  await fs.rename(tmp, file);
+}
+// Las escrituras sobre un mismo archivo van en fila, para que dos peticiones seguidas no se pisen.
+const chains = new Map();
+function serial(key, fn) {
+  const prev = chains.get(key) ?? Promise.resolve();
+  const next = prev.then(fn, fn);
+  chains.set(key, next.catch(() => {}));
+  return next;
+}
+
+/* ── Perfiles ── */
+async function getProfiles() {
+  let list = await readJson(PROFILES_FILE, null);
+  if (!Array.isArray(list) || !list.length) {
+    list = [{ id: 'main', name: 'Principal', kids: false, color: 0 }];
+    await writeJson(PROFILES_FILE, list);
+  }
+  return list;
+}
+
+app.get('/api/profiles', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.json(await getProfiles());
+});
+
+app.post('/api/profiles', async (req, res) => {
+  const name = String(req.body?.name ?? '').trim().slice(0, 12);
+  if (!name) return res.status(400).json({ error: 'El nombre está vacío' });
+  const made = await serial('profiles', async () => {
+    const list = await getProfiles();
+    if (list.length >= 8) return null;
+    const p = { id: crypto.randomBytes(3).toString('hex'), name, kids: Boolean(req.body?.kids), color: list.length % 6 };
+    list.push(p);
+    await writeJson(PROFILES_FILE, list);
+    return p;
+  });
+  if (!made) return res.status(400).json({ error: 'Máximo 8 perfiles' });
+  res.json(made);
+});
+
+app.delete('/api/profiles/:id', async (req, res) => {
+  const id = req.params.id;
+  if (!validId(id)) return res.sendStatus(400);
+  const ok = await serial('profiles', async () => {
+    const list = await getProfiles();
+    if (list.length <= 1) return false;          // siempre queda al menos un perfil
+    await writeJson(PROFILES_FILE, list.filter((p) => p.id !== id));
+    await fs.rm(pfile(id), { force: true });
+    return true;
+  });
+  res.json({ ok });
+});
+
+/* ── Datos de cada perfil (Mi lista, progreso, vistos, preferencias) ── */
+const KEY_OK = /^(mylist|watching|pref|watched:.{1,300}|eps:.{1,300})$/;
+
+app.get('/api/store/:pid', async (req, res) => {
+  const id = req.params.pid;
+  if (!validId(id) || !(await getProfiles()).some((p) => p.id === id)) return res.sendStatus(404);
+  res.setHeader('Cache-Control', 'no-store');
+  res.json(await readJson(pfile(id), {}));
+});
+
+app.post('/api/store/:pid', async (req, res) => {
+  const id = req.params.pid;
+  if (!validId(id) || !Array.isArray(req.body?.ops)) return res.sendStatus(400);
+  if (!(await getProfiles()).some((p) => p.id === id)) return res.sendStatus(404);
+  await serial('p-' + id, async () => {
+    const data = await readJson(pfile(id), {});
+    for (const op of req.body.ops.slice(0, 300)) {
+      const k = String(op?.k ?? '');
+      if (!KEY_OK.test(k)) continue;
+      if (op.del) delete data[k];
+      else if (typeof op.v === 'string' && op.v.length < 500000) data[k] = op.v;
+    }
+    await writeJson(pfile(id), data);
+  });
+  res.json({ ok: true });
+});
+
+/* ── Modo infantil: títulos de géneros no aptos (según los géneros del propio sitio) ── */
+const KID_BLOCK = ['ecchi', 'harem', 'terror', 'horror', 'suspenso', 'psicologico', 'seinen'];
+let blockedP = null, blockedSet = null;
+
+function ensureBlocked() {
+  if (db.blocked) return Promise.resolve(db.blocked);
+  if (!blockedP) {
+    blockedP = (async () => {
+      await indexReady;
+      const slugs = db.genres.map((g) => g.slug).filter((s) => KID_BLOCK.includes(s));
+      const set = new Set();
+      for (const slug of slugs) {
+        for (let page = 1; page <= 40; page++) {
+          const r = await fetchCatalogPage(page, slug);
+          r.list.forEach((c) => set.add(c.url));
+          if (!r.list.length || r.hasMore === false) break;
+          await sleep(150);
+        }
+      }
+      db.blocked = [...set];
+      try { await fs.mkdir(CACHE_DIR, { recursive: true }); await fs.writeFile(CACHE_FILE, JSON.stringify(db)); } catch { /* sin permisos */ }
+      console.log(`[kids] ${db.blocked.length} títulos bloqueados (${slugs.join(', ') || 'no hay géneros para bloquear'})`);
+      return db.blocked;
+    })();
+  }
+  return blockedP;
+}
+
+async function kidsFilter(arr) {
+  const b = await ensureBlocked();
+  if (!blockedSet || blockedSet.size !== b.length) blockedSet = new Set(b);
+  return arr.filter((c) => !blockedSet.has(c.url));
+}
+
+/* ── Insignia "NUEVO": número de episodios de los animes que sigue cada perfil ── */
+let counts = {};   // url del anime → { n: episodios, t: última comprobación }
+
+async function trackedUrls() {
+  const urls = new Set();
+  for (const p of await getProfiles()) {
+    const d = await readJson(pfile(p.id), {});
+    try { JSON.parse(d.mylist || '[]').forEach((x) => x.url && urls.add(x.url)); } catch { /* dato corrupto */ }
+    try { JSON.parse(d.watching || '[]').forEach((x) => x.a && urls.add(x.a)); } catch { /* dato corrupto */ }
+  }
+  return [...urls];
+}
+
+async function checkCount(url) {
+  try {
+    const r = await axios.get(`${CONFIG.resolverUrl}/api/v1/anime/info`, {
+      params: { url, apiKey: CONFIG.apiKey }, timeout: 20000, validateStatus: () => true,
+    });
+    const d = r.data?.data;
+    if (r.status !== 200 || !d) return;
+    const n = Array.isArray(d.episodes) ? d.episodes.length : Number(d.totalEpisodes) || 0;
+    if (n) counts[url] = { n, t: Date.now() };
+  } catch { /* se reintenta en la siguiente vuelta */ }
+}
+
+async function refreshCounts() {
+  counts = { ...(await readJson(COUNTS_FILE, {})), ...counts };
+  const urls = await trackedUrls();
+  for (const u of urls) {
+    if (!counts[u] || Date.now() - counts[u].t > 3 * 3600 * 1000) { await checkCount(u); await sleep(400); }
+  }
+  await writeJson(COUNTS_FILE, counts);
+  console.log(`[nuevos] comprobados ${urls.length} animes`);
+}
+
+app.post('/api/counts', async (req, res) => {
+  const urls = Array.isArray(req.body?.urls) ? req.body.urls.slice(0, 60).map(String) : [];
+  const out = {}, missing = [];
+  for (const u of urls) { if (counts[u]) out[u] = counts[u].n; else missing.push(u); }
+  res.json({ counts: out });
+  // Los que aún no conocemos se consultan después; la próxima vez ya estarán.
+  for (const u of missing.slice(0, 20)) { await checkCount(u); await sleep(300); }
+  if (missing.length) writeJson(COUNTS_FILE, counts).catch(() => {});
+});
+
 /* ───────────────────────── ARRANQUE / CIERRE ───────────────────────── */
 
 await fs.rm(HLS_DIR, { recursive: true, force: true });
 ffmpegCheck();
 
 indexReady = buildIndex().catch((e) => { console.error('[index] error:', e.message); });
+
+// Prepara en segundo plano la lista del modo infantil y la comprobación de episodios nuevos.
+indexReady.then(() => ensureBlocked()).catch(() => {});
+setTimeout(() => refreshCounts().catch(() => {}), 60 * 1000).unref();
+setInterval(() => refreshCounts().catch(() => {}), 3 * 3600 * 1000).unref();
 
 await initBrowser();
 const server = app.listen(CONFIG.port, '0.0.0.0', () => {

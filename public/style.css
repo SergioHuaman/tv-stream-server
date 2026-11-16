@@ -47,3 +47,9 @@ body { margin: 0; height: 100%; overflow: hidden; background: #0b0b0f; color: #f
 .chip.sel { background: #f47521; color: #000; }
 
 #msg { display: none; position: fixed; top: 45%; left: 0; right: 0; text-align: center; font-size: 1.8rem; pointer-events: none; }
+.cover { position: relative; }
+.badge { position: absolute; top: .5rem; left: .5rem; padding: .2rem .7rem; font-size: 1.05rem; font-weight: bold; background: #f47521; color: #000; border-radius: .3rem; }
+.ni.right { float: right; }
+#fbar { padding: 0 3rem 1rem; overflow: hidden; }
+.fp { float: left; margin-right: 1rem; padding: .6rem 1.6rem; font-size: 1.3rem; background: #1c1c24; border-radius: 2rem; }
+.fp.sel { background: #f47521; color: #000; }

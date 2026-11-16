@@ -1,0 +1,171 @@
+[static] sirviendo archivos desde: C:\Users\Sergio\Desktop\tv-stream-server\public
+[index] desde caché: 1000 animes, 25 géneros
+[hls] ffmpeg listo: ffmpeg version 6.1.1-essentials_build-www.gyan.dev Copyright (c) 2000-2023 the FFmpeg developers
+====================================================
+🚀 [PROXY TV] http://<IP-de-tu-PC>:4000
+🔗 Resolvedor esperado en http://localhost:3000
+====================================================
+[TV] Solicitando: https://animeav1.com/media/kanojo-okarishimasu-5th-season/6
+[embed www.mp4upload.com] HTTP 200 | título: 
+[embed www.mp4upload.com] resultado: https://a3.mp4upload.com:183/d/xsx7ivfcz3b4quuo2krrmkcucv4zfogrqz4jbnzortodtek6aapdnwgl7slpqzzotilzddxu/video.mp4
+[probe] formato: marca=isom | moov al inicio | VIDEO=av01 | audio=mp4a
+[probe] a3.mp4upload.com -> 206 application/octet-stream
+[probe] este vídeo se convertirá a H.264 para la TV
+[hls] conversión desde 0 s (trozo 0)
+[proxy] GET a3.mp4upload.com range=bytes=0- | cliente: Lavf/60.16.100
+[proxy] a3.mp4upload.com range=bytes=0- -> 206 application/octet-stream len=146985661 cr=bytes 0-146985660/146985661
+[skip] mal=62485 ep=6 -> op
+[hls] conversión desde 474 s (trozo 79)
+[proxy] cierre: 3840 KB enviados en 29734 ms | completo=false
+[proxy] GET a3.mp4upload.com range=bytes=0- | cliente: Lavf/60.16.100
+[proxy] a3.mp4upload.com range=bytes=0- -> 206 application/octet-stream len=146985661 cr=bytes 0-146985660/146985661
+[proxy] GET a3.mp4upload.com range=bytes=60211414- | cliente: Lavf/60.16.100
+[proxy] a3.mp4upload.com range=bytes=60211414- -> 206 application/octet-stream len=86774247 cr=bytes 60211414-146985660/146985661
+[proxy] cierre: 1328 KB enviados en 5027 ms | completo=false
+[TV] Solicitando: https://animeav1.com/media/kanojo-okarishimasu-5th-season/5
+[embed www.mp4upload.com] HTTP 200 | título: 
+[embed www.mp4upload.com] resultado: https://a4.mp4upload.com:183/d/xkxq2efcz3b4quuo26rr4o2fjedpn3m6ih72umr75tjutp76lhwuv6hax6wmxkwwepk2izhi/video.mp4
+[probe] formato: marca=isom | moov al inicio | VIDEO=av01 | audio=mp4a
+[probe] a4.mp4upload.com -> 206 application/octet-stream
+[probe] este vídeo se convertirá a H.264 para la TV
+[hls] conversión desde 12 s (trozo 2)
+[proxy] cierre: 8304 KB enviados en 18496 ms | completo=false
+[proxy] GET a3.mp4upload.com range=bytes=0- | cliente: Lavf/60.16.100
+[proxy] a3.mp4upload.com range=bytes=0- -> 206 application/octet-stream len=146985661 cr=bytes 0-146985660/146985661
+[proxy] GET a3.mp4upload.com range=bytes=2952053- | cliente: Lavf/60.16.100
+[proxy] a3.mp4upload.com range=bytes=2952053- -> 206 application/octet-stream len=144033608 cr=bytes 2952053-146985660/146985661
+[proxy] cierre: 1328 KB enviados en 3637 ms | completo=false
+[skip] mal=62485 ep=5 -> op
+[hls] conversión desde 540 s (trozo 90)
+[proxy] cierre: 864 KB enviados en 1900 ms | completo=false
+[proxy] GET a3.mp4upload.com range=bytes=0- | cliente: Lavf/60.16.100
+[proxy] a3.mp4upload.com range=bytes=0- -> 206 application/octet-stream len=146985661 cr=bytes 0-146985660/146985661
+[hls] conversión desde 12 s (trozo 2)
+[proxy] cierre: 96 KB enviados en 540 ms | completo=false
+[proxy] GET a3.mp4upload.com range=bytes=0- | cliente: Lavf/60.16.100
+[hls] conversión desde 540 s (trozo 90)
+[proxy] GET a3.mp4upload.com range=bytes=0- | cliente: Lavf/60.16.100
+[hls] conversión desde 12 s (trozo 2)
+[proxy] GET a3.mp4upload.com range=bytes=0- | cliente: Lavf/60.16.100
+[hls] conversión desde 540 s (trozo 90)
+[proxy] GET a3.mp4upload.com range=bytes=0- | cliente: Lavf/60.16.100
+[hls] conversión desde 12 s (trozo 2)
+[proxy] GET a3.mp4upload.com range=bytes=0- | cliente: Lavf/60.16.100
+[hls] conversión desde 540 s (trozo 90)
+[proxy] GET a3.mp4upload.com range=bytes=0- | cliente: Lavf/60.16.100
+[proxy] a3.mp4upload.com range=bytes=0- -> 206 application/octet-stream len=146985661 cr=bytes 0-146985660/146985661
+[hls] conversión desde 12 s (trozo 2)
+[proxy] cierre: 96 KB enviados en 844 ms | completo=false
+[proxy] GET a3.mp4upload.com range=bytes=0- | cliente: Lavf/60.16.100
+[hls] conversión desde 540 s (trozo 90)
+[proxy] GET a3.mp4upload.com range=bytes=0- | cliente: Lavf/60.16.100
+[hls] conversión desde 12 s (trozo 2)
+[proxy] GET a3.mp4upload.com range=bytes=0- | cliente: Lavf/60.16.100
+[proxy] a3.mp4upload.com range=bytes=0- -> 206 application/octet-stream len=146985661 cr=bytes 0-146985660/146985661
+[hls] conversión desde 540 s (trozo 90)
+[proxy] cierre: 32 KB enviados en 114 ms | completo=false
+[proxy] GET a3.mp4upload.com range=bytes=0- | cliente: Lavf/60.16.100
+[hls] conversión desde 12 s (trozo 2)
+[proxy] GET a3.mp4upload.com range=bytes=0- | cliente: Lavf/60.16.100
+[hls] conversión desde 540 s (trozo 90)
+[proxy] GET a3.mp4upload.com range=bytes=0- | cliente: Lavf/60.16.100
+[hls] conversión desde 12 s (trozo 2)
+[proxy] GET a3.mp4upload.com range=bytes=0- | cliente: Lavf/60.16.100
+[hls] conversión desde 540 s (trozo 90)
+[proxy] GET a3.mp4upload.com range=bytes=0- | cliente: Lavf/60.16.100
+[hls] conversión desde 12 s (trozo 2)
+[proxy] GET a3.mp4upload.com range=bytes=0- | cliente: Lavf/60.16.100
+[hls] conversión desde 540 s (trozo 90)
+[proxy] GET a3.mp4upload.com range=bytes=0- | cliente: Lavf/60.16.100
+[hls] conversión desde 12 s (trozo 2)
+[proxy] GET a3.mp4upload.com range=bytes=0- | cliente: Lavf/60.16.100
+[hls] conversión desde 540 s (trozo 90)
+[proxy] GET a3.mp4upload.com range=bytes=0- | cliente: Lavf/60.16.100
+[TV] Solicitando: https://animeav1.com/media/kanojo-okarishimasu-5th-season/6
+[hls] conversión desde 12 s (trozo 2)
+[embed www.mp4upload.com] HTTP 200 | título: 
+[proxy] GET a3.mp4upload.com range=bytes=0- | cliente: Lavf/60.16.100
+[embed www.mp4upload.com] resultado: https://a3.mp4upload.com:183/d/xsx7ivfcz3b4quuo2krrmkcucv4zfogrqz4jbnzortodtek6ad5asekqlhfjljs5sjt3nqdt/video.mp4
+[hls] conversión desde 540 s (trozo 90)
+[proxy] GET a3.mp4upload.com range=bytes=0- | cliente: Lavf/60.16.100
+[hls] conversión desde 12 s (trozo 2)
+[proxy] GET a3.mp4upload.com range=bytes=0- | cliente: Lavf/60.16.100
+[hls] conversión desde 540 s (trozo 90)
+[proxy] GET a3.mp4upload.com range=bytes=0- | cliente: Lavf/60.16.100
+[hls] conversión desde 12 s (trozo 2)
+[proxy] GET a3.mp4upload.com range=bytes=0- | cliente: Lavf/60.16.100
+[probe] formato: marca=isom | moov al inicio | VIDEO=av01 | audio=mp4a
+[probe] a3.mp4upload.com -> 206 application/octet-stream
+[probe] este vídeo se convertirá a H.264 para la TV
+[hls] conversión desde 0 s (trozo 0)
+[hls] conversión desde 540 s (trozo 90)
+[proxy] GET a3.mp4upload.com range=bytes=0- | cliente: Lavf/60.16.100
+[hls] conversión desde 12 s (trozo 2)
+[proxy] GET a3.mp4upload.com range=bytes=0- | cliente: Lavf/60.16.100
+[hls] conversión desde 540 s (trozo 90)
+[proxy] GET a3.mp4upload.com range=bytes=0- | cliente: Lavf/60.16.100
+[hls] conversión desde 0 s (trozo 0)
+[proxy] GET a3.mp4upload.com range=bytes=0- | cliente: Lavf/60.16.100
+[hls] conversión desde 540 s (trozo 90)
+[proxy] GET a3.mp4upload.com range=bytes=0- | cliente: Lavf/60.16.100
+[proxy] a3.mp4upload.com range=bytes=0- -> 206 application/octet-stream len=146985661 cr=bytes 0-146985660/146985661
+[hls] conversión desde 0 s (trozo 0)
+[proxy] cierre: 528 KB enviados en 4871 ms | completo=false
+[hls] conversión desde 540 s (trozo 90)
+[proxy] GET a3.mp4upload.com range=bytes=0- | cliente: Lavf/60.16.100
+[proxy] a3.mp4upload.com range=bytes=0- -> 206 application/octet-stream len=146985661 cr=bytes 0-146985660/146985661
+[hls] conversión desde 0 s (trozo 0)
+[proxy] cierre: 896 KB enviados en 8262 ms | completo=false
+[proxy] GET a3.mp4upload.com range=bytes=0- | cliente: Lavf/60.16.100
+[hls] conversión desde 540 s (trozo 90)
+[proxy] GET a3.mp4upload.com range=bytes=0- | cliente: Lavf/60.16.100
+[proxy] a3.mp4upload.com range=bytes=0- -> 206 application/octet-stream len=146985661 cr=bytes 0-146985660/146985661
+[proxy] GET a3.mp4upload.com range=bytes=68054688- | cliente: Lavf/60.16.100
+[proxy] a3.mp4upload.com range=bytes=68054688- -> 206 application/octet-stream len=78930973 cr=bytes 68054688-146985660/146985661
+[proxy] cierre: 1328 KB enviados en 7546 ms | completo=false
+[hls] conversión desde 0 s (trozo 0)
+[proxy] cierre: 64 KB enviados en 283 ms | completo=false
+[proxy] GET a3.mp4upload.com range=bytes=0- | cliente: Lavf/60.16.100
+[hls] conversión desde 540 s (trozo 90)
+[proxy] GET a3.mp4upload.com range=bytes=0- | cliente: Lavf/60.16.100
+[proxy] a3.mp4upload.com range=bytes=0- -> 206 application/octet-stream len=146985661 cr=bytes 0-146985660/146985661
+[TV] Solicitando: https://animeav1.com/media/kanojo-okarishimasu-5th-season/6 (sin MP4Upload)
+[proxy] GET a3.mp4upload.com range=bytes=68054688- | cliente: Lavf/60.16.100
+[embed player.zilla-networks.com] HTTP 200 | título: Video Player
+[proxy] a3.mp4upload.com range=bytes=68054688- -> 206 application/octet-stream len=78930973 cr=bytes 68054688-146985660/146985661
+[proxy] cierre: 1328 KB enviados en 8804 ms | completo=false
+[embed player.zilla-networks.com] resultado: nada
+[embed animeav1.uns.bio] HTTP 200 | título: Player
+[hls] error: tiempo agotado leyendo la duración
+[embed animeav1.uns.bio] resultado: nada
+[TV] Solicitando: https://animeav1.com/media/kanojo-okarishimasu-5th-season/6 (sin MP4Upload)
+[embed player.zilla-networks.com] HTTP 200 | título: Video Player
+[hls] conversión desde 0 s (trozo 0)
+[proxy] cierre: 4880 KB enviados en 16465 ms | completo=false
+[proxy] GET a3.mp4upload.com range=bytes=0- | cliente: Lavf/60.16.100
+[hls] error: tiempo agotado leyendo la duración
+[proxy] a3.mp4upload.com range=bytes=0- -> 206 application/octet-stream len=146985661 cr=bytes 0-146985660/146985661
+[embed player.zilla-networks.com] resultado: nada
+[embed animeav1.uns.bio] HTTP 200 | título: Player
+[embed animeav1.uns.bio] resultado: nada
+[hls] error: tiempo agotado leyendo la duración
+[hls] conversión desde 516 s (trozo 86)
+[proxy] cierre: 3792 KB enviados en 42060 ms | completo=false
+[proxy] GET a3.mp4upload.com range=bytes=0- | cliente: Lavf/60.16.100
+[proxy] a3.mp4upload.com range=bytes=0- -> 206 application/octet-stream len=146985661 cr=bytes 0-146985660/146985661
+[proxy] GET a3.mp4upload.com range=bytes=66573965- | cliente: Lavf/60.16.100
+[proxy] a3.mp4upload.com range=bytes=66573965- -> 206 application/octet-stream len=80411696 cr=bytes 66573965-146985660/146985661
+[proxy] cierre: 1328 KB enviados en 9139 ms | completo=false
+[proxy] cierre: 78527 KB enviados en 765925 ms | completo=true
+[TV] Solicitando: https://animeav1.com/media/kanojo-okarishimasu-5th-season/7
+[embed www.mp4upload.com] HTTP 200 | título: 
+[embed www.mp4upload.com] resultado: https://a3.mp4upload.com:183/d/xsxqrhnnz3b4quuo5wruuisjc2oklkkk7o6crn73nkaxzteuhu2pjgfuaoqmmzrabsres7pv/video.mp4
+[probe] formato: marca=isom | moov al inicio | VIDEO=av01 | audio=mp4a
+[probe] a3.mp4upload.com -> 206 application/octet-stream
+[probe] este vídeo se convertirá a H.264 para la TV
+[hls] precalentando el siguiente episodio
+[hls] conversión desde 0 s (trozo 0)
+[proxy] GET a3.mp4upload.com range=bytes=0- | cliente: Lavf/60.16.100
+[proxy] a3.mp4upload.com range=bytes=0- -> 206 application/octet-stream len=165824193 cr=bytes 0-165824192/165824193
+[skip] mal=62485 ep=7 -> sin datos
+[proxy] cierre: 161938 KB enviados en 463382 ms | completo=true

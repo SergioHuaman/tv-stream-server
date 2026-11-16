@@ -3,48 +3,135 @@
 <head>
 <meta charset="utf-8">
 <title>Reproductor</title>
+<script src="store.js"></script>
 <style>
-  html, body { height: 100%; margin: 0; overflow: hidden; background: #000; color: #fff; font-family: sans-serif; text-align: center; }
-  video { width: 100%; height: 100%; background: #000; }
-  #status { position: absolute; top: 50%; left: 50%; -webkit-transform: translate(-50%, -50%); transform: translate(-50%, -50%); font-size: 24px; background: rgba(0,0,0,0.7); padding: 15px 30px; border-radius: 8px; pointer-events: none; }
-  #next { display: none; position: absolute; right: 3%; bottom: 14%; padding: 18px 30px; text-align: left; background: rgba(20,20,26,.94); border: 3px solid #f47521; border-radius: 10px; font-size: 26px; }
+  #epbtn { display: none; margin-top: 8px; padding: 6px 18px; font-size: 20px; background: rgba(255,255,255,.18); border-radius: 18px; }
+  html, body { height: 100%; margin: 0; overflow: hidden; background: #000; color: #fff; font-family: sans-serif; }
+  video { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: #000; }
+  #status { position: absolute; top: 50%; left: 50%; -webkit-transform: translate(-50%, -50%); transform: translate(-50%, -50%); font-size: 24px; background: rgba(0,0,0,0.7); padding: 15px 30px; border-radius: 8px; pointer-events: none; text-align: center; }
+  #buf { display: none; position: absolute; top: 44%; left: 0; right: 0; text-align: center; font-size: 30px; text-shadow: 0 0 8px #000; pointer-events: none; }
+  #toast { display: none; position: absolute; top: 6%; left: 50%; -webkit-transform: translateX(-50%); transform: translateX(-50%); padding: 10px 26px; font-size: 24px; background: rgba(244,117,33,.95); color: #000; border-radius: 8px; z-index: 5; }
+  #osd { display: none; position: absolute; left: 0; right: 0; bottom: 0; padding: 70px 4% 28px; background: linear-gradient(0deg, rgba(0,0,0,.88), rgba(0,0,0,0)); }
+  #otitle { font-size: 28px; margin-bottom: 14px; text-shadow: 0 0 6px #000; }
+  #bar { position: relative; height: 10px; background: rgba(255,255,255,.3); border-radius: 5px; }
+  #fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: #f47521; border-radius: 5px; }
+  #pre { display: none; position: absolute; top: -6px; width: 4px; height: 22px; margin-left: -2px; background: #fff; }
+  #times { margin-top: 12px; font-size: 22px; overflow: hidden; }
+  #tl { float: left; } #tr { float: right; }
+  #hint { margin-top: 6px; font-size: 16px; color: #aaa; text-align: center; }
+  #skip { display: none; position: absolute; right: 3%; bottom: 38%; padding: 14px 28px; font-size: 26px; font-weight: bold; background: rgba(244,117,33,.97); color: #000; border-radius: 8px; }
+  #next { display: none; position: absolute; right: 3%; bottom: 22%; padding: 18px 30px; text-align: left; background: rgba(20,20,26,.94); border: 3px solid #f47521; border-radius: 10px; font-size: 26px; }
   #next b { color: #f47521; }
   #next small { display: block; margin-top: 8px; font-size: 18px; color: #bbb; }
-  #dbg { display: none; position: absolute; left: 10px; right: 10px; bottom: 10px; padding: 8px 12px; text-align: left; font-size: 16px; color: #9f9; background: rgba(0,0,0,.8); border-radius: 6px; white-space: pre-wrap; }
+  #set { display: none; position: absolute; right: 3%; top: 8%; width: 560px; padding: 18px 24px; background: rgba(20,20,26,.97); border: 3px solid #f47521; border-radius: 10px; font-size: 24px; z-index: 6; }
+  #set h3 { margin: 0 0 10px; font-size: 26px; color: #f47521; }
+  .srow { overflow: hidden; padding: 10px 12px; margin: 4px 0; border-radius: 6px; }
+  .srow.sel { background: #f47521; color: #000; }
+  .sl { float: left; } .sv { float: right; }
+  #shint { margin-top: 10px; font-size: 16px; color: #aaa; text-align: center; }
+  #eplist { display: none; position: absolute; left: 0; right: 0; bottom: 0; padding: 26px 3% 30px; background: rgba(0,0,0,.92); z-index: 4; }
+  #eptitle { font-size: 26px; margin-bottom: 14px; color: #f47521; }
+  #epvp { overflow: hidden; padding: 6px 0; }
+  #eptrack { position: relative; white-space: nowrap; -webkit-transition: -webkit-transform .2s; transition: transform .2s; }
+  .epc { display: inline-block; width: 90px; margin-right: 12px; padding: 16px 0; text-align: center; font-size: 24px; background: #1c1c24; border-radius: 8px; border: 3px solid transparent; }
+  .epc.seen { color: #8c8; }
+  .epc.cur { border-color: #f47521; }
+  .epc.sel { background: #f47521; color: #000; }
+  #ephint { margin-top: 12px; font-size: 16px; color: #aaa; text-align: center; }
+  #dbg { display: none; position: absolute; left: 10px; right: 10px; top: 10px; padding: 8px 12px; text-align: left; font-size: 16px; color: #9f9; background: rgba(0,0,0,.8); border-radius: 6px; white-space: pre-wrap; }
 </style>
 </head>
 <body>
+  <video id="v" autoplay></video>
   <div id="status">Conectando con el servidor local...</div>
-  <video id="v" controls autoplay style="display:none;"></video>
+  <div id="buf">Cargando...</div>
+  <div id="toast"></div>
+  <div id="skip"></div>
+  <div id="osd">
+    <div id="otitle"></div>
+    <div id="bar"><div id="fill"></div><div id="pre"></div></div>
+    <div id="times"><span id="tl">0:00</span><span id="tr">--:--</span></div>
+    <div id="epbtn">↓  Episodios</div>
+    <div id="hint">← → ±10 s  |  OK pausa  |  ↓ episodios  |  CH+ / CH− siguiente / anterior  |  Verde ajustes  |  Amarillo saltar</div>
+  </div>
   <div id="next"><b id="nt">Siguiente episodio</b><small id="nh"></small></div>
+  <div id="set"><h3>Ajustes</h3><div id="srows"></div><div id="shint">↑ ↓ moverse  |  ← → cambiar  |  OK cerrar</div></div>
+  <div id="eplist"><div id="eptitle">Episodios</div><div id="epvp"><div id="eptrack"></div></div><div id="ephint">← → elegir  |  OK reproducir  |  ↑ o Atrás cerrar</div></div>
   <div id="dbg"></div>
 
 <script>
-  var CREDITS_AT = 21 * 60 + 30;   // segundos en que aparece "Siguiente episodio" (episodios de 20-30 min)
-  var MAX_ROUNDS = 3;              // cuántas veces pedimos más servidores si fallan
+  var CREDITS_AT = 21 * 60 + 30;   // si no hay datos de ending, aparece "Siguiente episodio" aquí (episodios de 20-30 min)
+  var MAX_ROUNDS = 3;
+  var SKIP_SEC = 85;               // salto fijo del botón amarillo cuando no hay datos de opening
 
   function $(id) { return document.getElementById(id); }
   function qs(k) {
     var m = location.search.match(new RegExp('[?&]' + k + '=([^&]*)'));
     return m ? decodeURIComponent(m[1]) : '';
   }
+  function pad(n) { return n < 10 ? '0' + n : '' + n; }
+  function fmt(s) {
+    s = Math.max(0, Math.floor(s || 0));
+    var h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+    return (h ? h + ':' + pad(m) : m) + ':' + pad(s % 60);
+  }
 
-  var ep = qs('ep');
+  var videoPlayer = $('v'), statusDiv = $('status'), nextBox = $('next'), dbgBox = $('dbg');
+
+  /* ── Preferencias (se recuerdan entre episodios) ── */
+  var pref = { lang: 'SUB', q: 'auto', auto: 0, night: 0 };
+  try {
+    var p0 = JSON.parse(localStorage.getItem('pref') || 'null');
+    if (p0) { pref.lang = p0.lang || pref.lang; pref.q = p0.q || pref.q; pref.auto = p0.auto ? 1 : 0; pref.night = p0.night ? 1 : 0; }
+  } catch (e) {}
+  var cfg = { lang: (qs('lang') || pref.lang).toUpperCase(), q: qs('q') || pref.q, auto: pref.auto, night: pref.night };
+  var availLangs = [];
+  function savePref() {
+    try { localStorage.setItem('pref', JSON.stringify({ lang: cfg.lang, q: cfg.q, auto: cfg.auto, night: cfg.night })); } catch (e) {}
+  }
+  // Parámetros que se envían al servidor (idioma, calidad, modo noche).
+  function streamQS() {
+    return '&lang=' + encodeURIComponent(cfg.lang) + '&q=' + encodeURIComponent(cfg.q) + (cfg.night ? '&n=1' : '');
+  }
+
+  /* ── Datos del episodio ── */
+  var ep = qs('ep'), animeUrl = qs('a');
   var list = [];
-  try { list = JSON.parse(sessionStorage.getItem('epsList') || '[]'); } catch (e) {}
+  try { list = JSON.parse(sessionStorage.getItem('epsList') || 'null') || JSON.parse(localStorage.getItem('eps:' + animeUrl) || '[]'); } catch (e) { list = []; }
+  var now = null;
+  try { now = JSON.parse(sessionStorage.getItem('now') || 'null'); } catch (e) {}
+  if (now && animeUrl && now.a !== animeUrl) { now = null; }
+
   var curI = -1, li;
   for (li = 0; li < list.length; li++) { if (list[li].url === ep) { curI = li; break; } }
   var nextEp = (curI >= 0 && curI < list.length - 1) ? list[curI + 1] : null;
+  var prevEp = (curI > 0) ? list[curI - 1] : null;
   var nextN = nextEp ? nextEp.n : 0;
   var nextUrl = nextEp ? nextEp.url : '';
+  $('otitle').innerText = now ? (now.title + (now.label ? '  -  ' + now.label : '')) : '';
 
-  var statusDiv = $('status'), videoPlayer = $('v'), nextBox = $('next'), dbgBox = $('dbg');
+  // Dónde reanudar: parámetro t, o el progreso guardado de este episodio.
+  var startAt = 0, resumed = false, tParam = qs('t');
+  var minResume = tParam !== '' ? 3 : 15;
+  if (tParam !== '') { startAt = parseInt(tParam, 10) || 0; }
+  else {
+    try {
+      var w0 = JSON.parse(localStorage.getItem('watching') || '[]'), q0;
+      for (q0 = 0; q0 < w0.length; q0++) { if (w0[q0].ep === ep) { startAt = w0[q0].t || 0; } }
+    } catch (e) {}
+  }
+
   var playable = [], idx = 0, tried = [], rounds = 0;
   var shown = false, dismissed = false, prefetched = false, timer = null;
-  var wd = null, dbgTimer = null, dbgOn = false, evs = [];
+  var wd = null, dbgTimer = null, dbgOn = false, manualDbg = false, evs = [];
   var waitMsg = '', waitStart = 0;
+  var seekTarget = null, seekTimer = null, streak = 0, lastKey = 0;
+  var osdOn = false, osdTimer = null, lastSave = 0;
+  var skips = [], skipNow = null, skipsLoaded = false;
+  var sleepVal = 0, sleepAt = 0, sleepEnd = false;
+  var epOpen = false, epSel = 0, epBuilt = false;
 
-  /* ── Mensaje de espera con segundos ── */
+  /* ── Mensajes ── */
   function setWait(msg) {
     waitMsg = msg; waitStart = Date.now();
     statusDiv.style.display = 'block';
@@ -54,33 +141,216 @@
     if (waitMsg) { statusDiv.innerText = waitMsg + ' (' + Math.round((Date.now() - waitStart) / 1000) + ' s)'; }
   }, 1000);
   function setStatus(msg) { waitMsg = ''; statusDiv.style.display = 'block'; statusDiv.innerText = msg; }
+  function setBuf(on) { $('buf').style.display = on ? 'block' : 'none'; }
+  var toastT = null;
+  function toast(msg) {
+    var t = $('toast'); t.innerText = msg; t.style.display = 'block';
+    clearTimeout(toastT);
+    toastT = setTimeout(function () { t.style.display = 'none'; }, 3500);
+  }
 
-  /* ── Diagnóstico ── */
+  /* ── Progreso y episodios vistos ── */
+  function markWatched() {
+    try {
+      var k = 'watched:' + animeUrl, w = JSON.parse(localStorage.getItem(k) || '[]');
+      if (w.indexOf(ep) < 0) { w.push(ep); localStorage.setItem(k, JSON.stringify(w)); }
+    } catch (e) {}
+  }
+  function save() {
+    var d = videoPlayer.duration, t = videoPlayer.currentTime;
+    if (!now || !animeUrl || !d || !isFinite(d) || t < 10) { return; }
+    try {
+      var w = JSON.parse(localStorage.getItem('watching') || '[]');
+      w = w.filter(function (x) { return x.a !== animeUrl; });
+      var base = { a: animeUrl, title: now.title, image: now.image, mal: now.mal || 0, g: now.genres || [], ts: Date.now() };
+      var e1;
+      if (t / d < 0.93) {
+        e1 = { ep: ep, n: now.n, label: now.label, t: Math.floor(t), d: Math.floor(d) };
+      } else if (nextEp) {   // casi terminó: "Continuar viendo" apunta al siguiente episodio
+        e1 = { ep: nextEp.url, n: nextEp.n, label: 'Episodio ' + nextEp.n, t: 0, d: 0 };
+      }
+      if (e1) { for (var k1 in e1) { base[k1] = e1[k1]; } w.unshift(base); }
+      localStorage.setItem('watching', JSON.stringify(w.slice(0, 15)));
+      if (t / d > 0.9) { markWatched(); }
+    } catch (e) {}
+  }
+
+  /* ── Cambiar de episodio ── */
+  function goEpisode(it) {
+    save();
+    try { if (now) { now.n = it.n; now.label = 'Episodio ' + it.n; sessionStorage.setItem('now', JSON.stringify(now)); } } catch (e) {}
+    location.replace('player.html?ep=' + encodeURIComponent(it.url) + '&a=' + encodeURIComponent(animeUrl) + '&t=0');
+  }
+  function goNext() { if (nextEp) { goEpisode(nextEp); } }
+
+  /* ── Barra de progreso (OSD) ── */
+  function renderBar() {
+    var d = videoPlayer.duration, ok = d && isFinite(d);
+    var t = seekTarget !== null ? seekTarget : videoPlayer.currentTime;
+    var f = ok ? Math.max(0, Math.min(1, t / d)) : 0;
+    $('fill').style.width = (f * 100) + '%';
+    $('tl').innerText = fmt(t);
+    $('tr').innerText = ok ? fmt(d) : '--:--';
+    $('pre').style.display = seekTarget !== null ? 'block' : 'none';
+    $('pre').style.left = (f * 100) + '%';
+  }
+  function hideOsd() { osdOn = false; $('osd').style.display = 'none'; }
+  function showOsd() {
+    if (epOpen) { return; }
+    osdOn = true; $('osd').style.display = 'block'; renderBar();
+    clearTimeout(osdTimer);
+    osdTimer = setTimeout(function () { if (!videoPlayer.paused && seekTarget === null) { hideOsd(); } }, 4500);
+  }
+  setInterval(function () { if (osdOn) { renderBar(); } }, 250);
+
+  /* ── Saltos (retroceder / adelantar) ── */
+  function seekTo(t) { setBuf(true); videoPlayer.currentTime = t; }
+  function bump(dir, fixed) {
+    var d = videoPlayer.duration;
+    if (!d || !isFinite(d)) { return; }
+    var t = Date.now(), step = fixed;
+    if (!step) {
+      streak = (t - lastKey < 700) ? streak + 1 : 0;
+      step = streak < 3 ? 10 : streak < 8 ? 30 : streak < 16 ? 60 : 120;
+    }
+    lastKey = t;
+    var base = seekTarget === null ? videoPlayer.currentTime : seekTarget;
+    seekTarget = Math.max(0, Math.min(d - 3, base + dir * step));
+    showOsd();
+    clearTimeout(seekTimer);
+    seekTimer = setTimeout(commitSeek, 800);
+  }
+  function commitSeek() {
+    if (seekTarget === null) { return; }
+    var t = seekTarget; seekTarget = null;
+    seekTo(t);
+    showOsd();
+  }
+  $('bar').onclick = function (e) {
+    var d = videoPlayer.duration;
+    if (!d || !isFinite(d)) { return; }
+    var r = this.getBoundingClientRect();
+    seekTarget = Math.max(0, Math.min(d - 3, d * (e.clientX - r.left) / r.width));
+    commitSeek();
+  };
+  videoPlayer.onclick = function () { if (videoPlayer.paused) { videoPlayer.play(); } else { videoPlayer.pause(); } };
+
+    if (list.length > 1) { $('epbtn').style.display = 'inline-block'; }
+    $('epbtn').onclick = openEps;   // clic del Magic Remote
+
+  /* ── Panel de episodios (flecha abajo) ── */
+  function buildEps() {
+    if (epBuilt) { return; }
+    epBuilt = true;
+    var tr = $('eptrack'), w = [], i, c;
+    try { w = JSON.parse(localStorage.getItem('watched:' + animeUrl) || '[]'); } catch (e) {}
+    for (i = 0; i < list.length; i++) {
+      c = document.createElement('div');
+      c.className = 'epc' + (w.indexOf(list[i].url) >= 0 ? ' seen' : '') + (i === curI ? ' cur' : '');
+      c.appendChild(document.createTextNode(String(list[i].n)));
+      (function (it, n) { c.onclick = function () { if (n === curI) { closeEps(); } else { goEpisode(it); } }; })(list[i], i);
+      tr.appendChild(c);
+    }
+  }
+  function markEps() {
+    var cs = $('eptrack').children, i, c, x;
+    for (i = 0; i < cs.length; i++) {
+      cs[i].className = cs[i].className.replace(/ ?\bsel\b/, '') + (i === epSel ? ' sel' : '');
+    }
+    c = cs[epSel];
+    if (c) {
+      x = 'translateX(' + (-Math.max(0, c.offsetLeft - 4 * c.offsetWidth)) + 'px)';
+      $('eptrack').style.webkitTransform = x; $('eptrack').style.transform = x;
+    }
+  }
+  function openEps() {
+    if (list.length < 2) { hideOsd(); return; }   // películas: ↓ solo oculta la barra
+    buildEps();
+    epOpen = true;
+    epSel = curI >= 0 ? curI : 0;
+    hideOsd();
+    $('eplist').style.display = 'block';
+    markEps();
+  }
+  function closeEps() { epOpen = false; $('eplist').style.display = 'none'; }
+
+  /* ── Saltar opening / ending / resumen (tiempos de AniSkip) ── */
+  var SKIP_LABEL = { 'op': 'Saltar opening', 'mixed-op': 'Saltar opening', 'ed': 'Saltar ending', 'mixed-ed': 'Saltar ending', 'recap': 'Saltar resumen' };
+  function loadSkips() {
+    if (skipsLoaded || !now || !now.mal || now.n === undefined) { return; }
+    var d = videoPlayer.duration;
+    if (!d || !isFinite(d)) { return; }
+    skipsLoaded = true;
+    var x = new XMLHttpRequest();
+    x.open('GET', '/api/skip?mal=' + now.mal + '&ep=' + now.n + '&len=' + Math.round(d));
+    x.onload = function () {
+      try { var j = JSON.parse(x.responseText); if (j.found && j.items) { skips = j.items; } } catch (e) {}
+    };
+    x.send();
+  }
+  function checkSkip(t) {
+    var cur = null, i, s;
+    for (i = 0; i < skips.length; i++) {
+      s = skips[i];
+      if (t >= s.start - 0.5 && t < s.end - 1) { cur = s; break; }
+    }
+    if (cur === skipNow) { return; }
+    skipNow = cur;
+    var b = $('skip');
+    if (!cur) { b.style.display = 'none'; return; }
+    if (cfg.auto && !cur.done) { doSkip(); return; }
+    b.innerText = (SKIP_LABEL[cur.type] || 'Saltar') + '  (OK)';
+    b.style.display = 'block';
+  }
+  function doSkip() {
+    var s = skipNow;
+    if (!s) { return; }
+    s.done = true;
+    $('skip').style.display = 'none';
+    skipNow = null;
+    var d = videoPlayer.duration;
+    if ((s.type === 'ed' || s.type === 'mixed-ed') && nextUrl && d && s.end >= d - 8) { goNext(); return; }
+    seekTo(s.end);
+    toast(SKIP_LABEL[s.type] || 'Saltado');
+  }
+
+  /* ── Diagnóstico (botón rojo) ── */
   function log(s) { evs.push(s); if (evs.length > 12) { evs.shift(); } }
   function showDbg(on) { dbgOn = on; dbgBox.style.display = on ? 'block' : 'none'; }
   setInterval(function () {
     if (!dbgOn) { return; }
     var v = videoPlayer, s = playable[idx];
     dbgBox.innerText = 'servidor: ' + (s ? s.name : '-') + ' | readyState ' + v.readyState + ' | networkState ' + v.networkState +
-      ' | error ' + (v.error ? v.error.code : '-') + ' | duración ' + v.duration + ' | tiempo ' + Math.round(v.currentTime) + '\n' +
-      evs.join(' > ');
+      ' | error ' + (v.error ? v.error.code : '-') + ' | duración ' + v.duration + ' | tiempo ' + Math.round(v.currentTime) + '\n' + evs.join(' > ');
   }, 500);
 
-  var EV = ['loadstart', 'loadedmetadata', 'loadeddata', 'canplay', 'playing', 'waiting', 'stalled', 'suspend', 'abort', 'error', 'ended'];
+  var EV = ['loadstart', 'loadedmetadata', 'loadeddata', 'canplay', 'playing', 'waiting', 'stalled', 'seeking', 'seeked', 'error', 'ended'];
   for (var q = 0; q < EV.length; q++) {
     (function (n) {
       videoPlayer.addEventListener(n, function () {
         log(n);
-        if (n === 'loadedmetadata') { clearTimeout(wd); clearTimeout(dbgTimer); if (dbgOn && !manualDbg) { showDbg(false); } }
+        if (n === 'waiting' || n === 'seeking') { setBuf(true); }
+        if (n === 'playing' || n === 'seeked' || n === 'canplay') { setBuf(false); }
+        if (n === 'loadedmetadata') {
+          clearTimeout(wd); clearTimeout(dbgTimer);
+          if (dbgOn && !manualDbg) { showDbg(false); }
+          var d = videoPlayer.duration;
+          if (!resumed && startAt > minResume && d && startAt < d - 30) {
+            resumed = true;
+            videoPlayer.currentTime = startAt;
+            toast('Continuando desde ' + fmt(startAt));
+          }
+          loadSkips();
+          showOsd();
+        }
       });
     })(EV[q]);
   }
-  var manualDbg = false;
+  videoPlayer.addEventListener('pause', function () { showOsd(); });
+  videoPlayer.addEventListener('play', function () { showOsd(); });
+  window.addEventListener('pagehide', save);
 
-  /* ── Siguiente episodio ── */
-  function goNext() {
-    location.replace('player.html?ep=' + encodeURIComponent(nextUrl));
-  }
+  /* ── Siguiente episodio (aviso y cuenta atrás) ── */
   function showNext() {
     if (shown) { return; }
     shown = true;
@@ -104,24 +374,90 @@
     shown = false;
     dismissed = true;
   }
+  // Pide el siguiente episodio con los mismos ajustes y le dice a la PC que empiece a convertirlo ya.
   function prefetch() {
     var x = new XMLHttpRequest();
-    x.open('GET', '/api/stream?url=' + encodeURIComponent(nextUrl));
+    x.open('GET', '/api/stream?url=' + encodeURIComponent(nextUrl) + streamQS() + '&warm=1');
     x.send();
   }
 
   videoPlayer.ontimeupdate = function () {
-    if (!nextUrl || dismissed) { return; }
     var d = videoPlayer.duration, t = videoPlayer.currentTime;
-    if (!d || !isFinite(d)) { return; }
+    if (Date.now() - lastSave > 5000) { lastSave = Date.now(); save(); }
+    if (skips.length) { checkSkip(t); }
+    if (!nextUrl || dismissed || !d || !isFinite(d)) { return; }
     var trigger = (d >= 1200 && d <= 1800) ? CREDITS_AT : d - 90;
     trigger = Math.min(trigger, d - 20);
+    if (shown && t < trigger - 3) { nextBox.style.display = 'none'; shown = false; clearInterval(timer); return; }
     if (!prefetched && t >= trigger - 120) { prefetched = true; prefetch(); }
     if (t >= trigger) { showNext(); }
   };
   videoPlayer.onended = function () {
+    markWatched(); save();
+    if (sleepEnd) { sleepEnd = false; sleepVal = 0; toast('Temporizador: fin del episodio. Buenas noches'); return; }
     if (nextUrl && !dismissed) { showNext(); countdown(5); }
   };
+
+  /* ── Ajustes (botón verde) ── */
+  var setOpen = false, setRow = 0, dirty = false;
+  var ROWS = ['lang', 'q', 'night', 'sleep', 'auto'];
+  var TITLES = { lang: 'Idioma', q: 'Calidad', night: 'Modo noche (audio parejo)', sleep: 'Temporizador', auto: 'Saltar intro/ending solo' };
+  function opts(k) {
+    if (k === 'lang') { return availLangs.length ? availLangs : [cfg.lang]; }
+    if (k === 'q') { return ['auto', '1080', '720', '480']; }
+    if (k === 'sleep') { return [0, 15, 30, 45, 60, -1]; }
+    return [0, 1];
+  }
+  function label(k, v) {
+    if (k === 'q') { return v === 'auto' ? 'Auto' : v + 'p'; }
+    if (k === 'sleep') { return v === 0 ? 'Apagado' : v === -1 ? 'Fin del episodio' : v + ' min'; }
+    if (k === 'auto' || k === 'night') { return v ? 'Sí' : 'No'; }
+    return v;
+  }
+  function curVal(k) { return k === 'sleep' ? sleepVal : cfg[k]; }
+  function renderSet() {
+    var c = $('srows'), i, k, d, a, b;
+    c.innerHTML = '';
+    for (i = 0; i < ROWS.length; i++) {
+      k = ROWS[i];
+      d = document.createElement('div'); d.className = 'srow' + (i === setRow ? ' sel' : '');
+      a = document.createElement('span'); a.className = 'sl'; a.appendChild(document.createTextNode(TITLES[k]));
+      b = document.createElement('span'); b.className = 'sv'; b.appendChild(document.createTextNode('<  ' + label(k, curVal(k)) + '  >'));
+      d.appendChild(a); d.appendChild(b); c.appendChild(d);
+    }
+  }
+  function applySleep() {
+    sleepAt = 0; sleepEnd = false;
+    if (sleepVal > 0) { sleepAt = Date.now() + sleepVal * 60000; toast('Se detendrá en ' + sleepVal + ' min'); }
+    else if (sleepVal === -1) { sleepEnd = true; toast('Se detendrá al terminar este episodio'); }
+  }
+  setInterval(function () {
+    if (sleepAt && Date.now() >= sleepAt) {
+      sleepAt = 0; sleepVal = 0;
+      videoPlayer.pause();
+      toast('Temporizador: reproducción detenida. Buenas noches');
+    }
+  }, 5000);
+  function changeOpt(dir) {
+    var k = ROWS[setRow], o = opts(k), i = o.indexOf(curVal(k));
+    i = Math.max(0, Math.min(o.length - 1, (i < 0 ? 0 : i) + dir));
+    var v = o[i];
+    if (k === 'sleep') { sleepVal = v; applySleep(); }
+    else if (cfg[k] !== v) { cfg[k] = v; if (k === 'lang' || k === 'q' || k === 'night') { dirty = true; } }
+    renderSet();
+  }
+  function openSet() { setOpen = true; setRow = 0; $('set').style.display = 'block'; renderSet(); }
+  function reloadWith() {
+    save();
+    var t = Math.floor(videoPlayer.currentTime || 0);
+    location.replace('player.html?ep=' + encodeURIComponent(ep) + '&a=' + encodeURIComponent(animeUrl) +
+      '&t=' + t + '&lang=' + encodeURIComponent(cfg.lang) + '&q=' + encodeURIComponent(cfg.q));
+  }
+  function closeSet() {
+    setOpen = false; $('set').style.display = 'none';
+    savePref();
+    if (dirty) { dirty = false; toast('Aplicando cambios...'); reloadWith(); }
+  }
 
   /* ── Servidores ── */
   function intentarServidor() {
@@ -130,8 +466,8 @@
     if (tried.indexOf(s.name) < 0) { tried.push(s.name); }
     waitMsg = '';
     statusDiv.style.display = 'none';
-    videoPlayer.style.display = 'block';
     log('servidor ' + s.name);
+
     var old = videoPlayer.getElementsByTagName('source');
     while (old.length) { videoPlayer.removeChild(old[0]); }
     videoPlayer.removeAttribute('src');
@@ -140,20 +476,20 @@
     so.onerror = function () { clearTimeout(wd); log('source error'); idx++; intentarServidor(); };
     so.src = s.src;
     videoPlayer.appendChild(so);
+    setBuf(true);
     videoPlayer.load();
     videoPlayer.play();
 
-    // Si en 15 s no llegan ni los datos básicos del vídeo, probamos otro servidor.
     clearTimeout(wd); clearTimeout(dbgTimer);
     dbgTimer = setTimeout(function () { if (videoPlayer.readyState < 1) { showDbg(true); } }, 6000);
     wd = setTimeout(function () {
-      if (videoPlayer.readyState < 1) { log('sin datos en 15 s'); idx++; intentarServidor(); }
+      if (videoPlayer.readyState < 1) { log('sin datos en 45 s'); idx++; intentarServidor(); }
     }, 45000);
   }
   videoPlayer.onerror = function () { clearTimeout(wd); idx++; intentarServidor(); };
 
   function pedirMas() {
-    videoPlayer.style.display = 'none';
+    setBuf(false);
     if (rounds >= MAX_ROUNDS) { setStatus('Ningún servidor pudo reproducirse.'); return; }
     loadServers(tried.join(','));
   }
@@ -162,19 +498,26 @@
     rounds++;
     setWait(skip ? 'Probando otro servidor...' : 'Extrayendo video...');
     var x = new XMLHttpRequest();
-    x.open('GET', '/api/stream?url=' + encodeURIComponent(ep) + (skip ? '&skip=' + encodeURIComponent(skip) : ''));
-    x.timeout = 90000;
+    x.open('GET', '/api/stream?url=' + encodeURIComponent(ep) + (skip ? '&skip=' + encodeURIComponent(skip) : '') + streamQS());
+    x.timeout = 120000;
     x.onload = function () {
       if (x.status < 200 || x.status >= 300) {
-        setStatus(skip ? 'No quedan más servidores que probar.' : 'Error de la API (' + x.status + ').');
+        var er = null;
+        try { er = JSON.parse(x.responseText); } catch (e) {}
+        var why = er && (er.detail || er.error);
+        setStatus(skip ? 'No quedan más servidores que probar.' : 'Error de la API (' + x.status + ')' + (why ? ': ' + why : ''));
         return;
       }
       var j = null, i;
       try { j = JSON.parse(x.responseText); } catch (e) {}
-      var list = (j && j.servers) || [];
+      if (j) {
+        if (j.langs && j.langs.length) { availLangs = j.langs; }
+        if (j.lang && j.lang !== cfg.lang) { cfg.lang = j.lang; }
+      }
+      var servers = (j && j.servers) || [];
       playable = []; idx = 0;
-      for (i = 0; i < list.length; i++) {
-        if (list[i].playable && list[i].src && tried.indexOf(list[i].name) < 0) { playable.push(list[i]); }
+      for (i = 0; i < servers.length; i++) {
+        if (servers[i].playable && servers[i].src && tried.indexOf(servers[i].name) < 0) { playable.push(servers[i]); }
       }
       if (!playable.length) {
         setStatus(tried.length ? 'No quedan más servidores que probar.' : 'Ningún servidor reproducible fue encontrado.');
@@ -187,22 +530,57 @@
     x.send();
   }
 
-  /* ── Control remoto LG: OK=13, Atrás=461, Play=415, Pausa=19, Adelantar=417, Retroceder=412, Rojo=403 ── */
+  /* ── Control remoto LG: OK=13, Atrás=461, Play=415, Pausa=19, Stop=413, Retroceder=412, Adelantar=417,
+        CH+=427, CH-=428 (en el PC: AvPág=34, RePág=33), Rojo=403, Verde=404, Amarillo=405 ── */
   document.addEventListener('keydown', function (e) {
     var v = videoPlayer, k = e.keyCode;
+
+    if (setOpen) {
+      if (k === 38 && setRow > 0) { setRow--; renderSet(); }
+      else if (k === 40 && setRow < ROWS.length - 1) { setRow++; renderSet(); }
+      else if (k === 37) { changeOpt(-1); }
+      else if (k === 39) { changeOpt(1); }
+      else if (k === 13 || k === 404 || k === 461 || k === 27 || k === 8) { closeSet(); }
+      else { return; }
+      e.preventDefault();
+      return;
+    }
+    if (epOpen) {
+      if (k === 37 && epSel > 0) { epSel--; markEps(); }
+      else if (k === 39 && epSel < list.length - 1) { epSel++; markEps(); }
+      else if (k === 13) { if (epSel === curI) { closeEps(); } else { goEpisode(list[epSel]); } }
+      else if (k === 38 || k === 40 || k === 461 || k === 27 || k === 8) { closeEps(); }
+      else { return; }
+      e.preventDefault();
+      return;
+    }
     if (shown) {
       if (k === 13) { e.preventDefault(); goNext(); return; }
       if (k === 461 || k === 27 || k === 8) { e.preventDefault(); dismiss(); return; }
     }
     switch (k) {
       case 403: manualDbg = !dbgOn; showDbg(!dbgOn); break;
-      case 415: v.play(); break;
-      case 19: v.pause(); break;
-      case 417: v.currentTime += 30; break;
-      case 412: v.currentTime -= 30; break;
-      case 13: if (v.paused) { v.play(); } else { v.pause(); } break;
-      case 461: case 27: history.back(); break;
+      case 404: openSet(); break;
+      case 405: if (skipNow) { doSkip(); } else { bump(1, SKIP_SEC); } break;
+      case 415: v.play(); showOsd(); break;
+      case 19: v.pause(); showOsd(); break;
+      case 13:
+        if (skipNow) { doSkip(); }
+        else { if (v.paused) { v.play(); } else { v.pause(); } showOsd(); }
+        break;
+      case 37: bump(-1); break;
+      case 39: bump(1); break;
+      case 412: bump(-1, 30); break;
+      case 417: bump(1, 30); break;
+      case 427: case 34: if (nextEp) { goEpisode(nextEp); } else { toast('No hay siguiente episodio'); } break;
+      case 428: case 33: if (prevEp) { goEpisode(prevEp); } else { toast('No hay episodio anterior'); } break;
+      case 38: showOsd(); break;
+      case 40: openEps(); break;
+      case 406: openEps(); break;
+      case 413: case 461: case 27: case 8: save(); history.back(); break;
+      default: return;
     }
+    e.preventDefault();
   });
 
   if (!ep) { setStatus('Falta el episodio. Elígelo desde el menú.'); }

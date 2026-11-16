@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <title>Anime</title>
 <link rel="stylesheet" href="style.css">
+<script src="store.js"></script>
 <style>
   #top { position: relative; min-height: 32rem; background: #111 center top / cover no-repeat; overflow: hidden; }
   #top .shade { position: absolute; top: 0; left: 0; right: 0; bottom: 0;
@@ -13,9 +14,13 @@
   #ainfo { position: relative; margin-left: 21rem; padding: 5.5rem 4rem 2rem 0; }
   #atitle { font-size: 3rem; margin: 0 0 .6rem; line-height: 1.1; }
   #ameta { font-size: 1.3rem; color: #f47521; margin-bottom: 1rem; }
-  #adesc { font-size: 1.25rem; line-height: 1.5; color: #ccc; max-height: 11rem; overflow: hidden; }
+  #adesc { font-size: 1.25rem; line-height: 1.5; color: #ccc; max-height: 9rem; overflow: hidden; }
+  #btns { margin-top: 1.2rem; }
+  .pill { display: inline-block; padding: .7rem 1.8rem; font-size: 1.4rem; background: #333; border-radius: 2rem; }
+  .pill.sel { background: #f47521; color: #000; }
   #eps { padding: 0 3rem 3rem; overflow: hidden; }
   .ep { float: left; width: 8%; margin: 0 1.2% 1.2rem 0; padding: 1.1rem 0; text-align: center; font-size: 1.5rem; background: #1c1c24; border-radius: .5rem; }
+  .ep.seen { background: #233; color: #8c8; }
   .ep.sel { background: #f47521; color: #000; }
   #emsg { margin: 0 3rem 1rem; font-size: 1.3rem; color: #ffb27a; }
   #toast { display: none; position: fixed; left: 50%; bottom: 8%; -webkit-transform: translateX(-50%); transform: translateX(-50%);
@@ -32,6 +37,7 @@
       <h1 id="atitle">Cargando...</h1>
       <div id="ameta"></div>
       <div id="adesc"></div>
+      <div id="btns"><span id="blist" class="pill">+ Mi lista</span></div>
     </div>
   </div>
   <div class="vt" style="margin-top:1.5rem;font-size:2rem">Episodios</div>
@@ -45,7 +51,8 @@
   var COLS = 10;
   var m = location.search.match(/[?&]url=([^&]+)/);
   var animeUrl = m ? decodeURIComponent(m[1]).replace(/\/+$/, '') : '';
-  var eps = [], sel = 0, kind = 'series';
+  var eps = [], sel = 0, kind = 'series', zone = 'eps';
+  var animeInfo = { title: '', image: '', mal: 0, genres: [] };
 
   function $(id) { return document.getElementById(id); }
   function rem(n) { return n * parseFloat(window.getComputedStyle(document.documentElement).fontSize); }
@@ -55,13 +62,18 @@
     var s = $('scroller');
     s.style.webkitTransform = css; s.style.transform = css;
   }
-
-  // Cualquier error de JavaScript se muestra en una banda roja (útil en la TV, donde no hay F12).
   window.onerror = function (msg, src, line) {
     var e = $('err');
     e.style.display = 'block';
     e.innerText = 'Error: ' + msg + ' (línea ' + line + ')';
   };
+  var flashT = null;
+  function flash(msg) {
+    var t = $('toast');
+    t.innerText = msg; t.style.display = 'block';
+    clearTimeout(flashT);
+    flashT = setTimeout(function () { t.style.display = 'none'; }, 1800);
+  }
 
   function names(a) {
     var o = [], i, v;
@@ -72,6 +84,29 @@
       }
     }
     return o;
+  }
+  function slugs(a) {
+    var o = [], i;
+    if (a && a.constructor === Array) {
+      for (i = 0; i < a.length && o.length < 3; i++) { if (a[i] && a[i].slug) { o.push(a[i].slug); } }
+    }
+    return o;
+  }
+
+  /* ── Mi lista ── */
+  function getList() { try { return JSON.parse(localStorage.getItem('mylist') || '[]'); } catch (e) { return []; } }
+  function inList() {
+    var l = getList(), i;
+    for (i = 0; i < l.length; i++) { if (l[i].url === animeUrl) { return true; } }
+    return false;
+  }
+  function toggleList() {
+    var l = getList(), out = [], had = false, i;
+    for (i = 0; i < l.length; i++) { if (l[i].url === animeUrl) { had = true; } else { out.push(l[i]); } }
+    if (!had) { out.unshift({ url: animeUrl, title: animeInfo.title, image: animeInfo.image, ts: new Date().getTime() }); }
+    try { localStorage.setItem('mylist', JSON.stringify(out)); } catch (e) {}
+    flash(had ? 'Quitado de Mi lista' : 'Añadido a Mi lista');
+    mark();
   }
 
   // Devuelve [{n: número, url: dirección}] usando la lista real de la ficha (respeta el episodio 0).
@@ -95,9 +130,13 @@
 
   function mark() {
     var els = $('eps').children, i;
-    for (i = 0; i < els.length; i++) { els[i].className = 'ep' + (i === sel ? ' sel' : ''); }
+    for (i = 0; i < els.length; i++) {
+      els[i].className = 'ep' + (eps[i] && eps[i].seen ? ' seen' : '') + (zone === 'eps' && i === sel ? ' sel' : '');
+    }
+    $('blist').innerText = inList() ? 'Quitar de Mi lista' : '+ Mi lista';
+    $('blist').className = 'pill' + (zone === 'btn' ? ' sel' : '');
     var e = els[sel];
-    setY(e ? e.offsetTop - rem(30) : 0);
+    setY(zone === 'eps' && e ? e.offsetTop - rem(30) : 0);
   }
 
   function play(i) {
@@ -106,8 +145,15 @@
     var t = $('toast');
     t.innerText = 'Abriendo ' + (kind === 'movie' ? 'la película' : 'el episodio ' + it.n) + '...';
     t.style.display = 'block';
-    try { sessionStorage.setItem('epsList', JSON.stringify(eps)); } catch (e) {}
-    setTimeout(function () { location.href = 'player.html?ep=' + encodeURIComponent(it.url); }, 50);
+    try {
+      sessionStorage.setItem('epsList', JSON.stringify(eps));
+      localStorage.setItem('eps:' + animeUrl, JSON.stringify(eps));
+      sessionStorage.setItem('now', JSON.stringify({
+        a: animeUrl, title: animeInfo.title, image: animeInfo.image, mal: animeInfo.mal, genres: animeInfo.genres,
+        n: it.n, label: kind === 'movie' ? 'Película' : 'Episodio ' + it.n
+      }));
+    } catch (e) {}
+    setTimeout(function () { location.href = 'player.html?ep=' + encodeURIComponent(it.url) + '&a=' + encodeURIComponent(animeUrl); }, 50);
   }
 
   function render(d) {
@@ -125,36 +171,55 @@
     if (cover) { $('acover').style.backgroundImage = 'url(' + img(cover) + ')'; }
     var bg = d.backdrop || d.banner;
     if (bg) { $('top').style.backgroundImage = 'url(' + img(bg) + ')'; }
+    animeInfo = { title: d.title || '', image: cover || '', mal: d.malId || 0, genres: slugs(d.genres) };
 
     eps = episodeList(d);
+    try { localStorage.setItem('eps:' + animeUrl, JSON.stringify(eps)); } catch (e) {}
     if (!eps.length) {
       var keys = [], k;
       for (k in d) { keys.push(k); }
       $('emsg').innerText = 'No encontré la lista de episodios. Campos recibidos: ' + keys.join(', ');
+      zone = 'btn'; mark();
       return;
     }
     kind = (eps.length === 1 && /pel/i.test(d.type || '')) ? 'movie' : 'series';
+
+    var watched = [], firstNew = -1;
+    try { watched = JSON.parse(localStorage.getItem('watched:' + animeUrl) || '[]'); } catch (e) {}
     for (var i = 0; i < eps.length; i++) {
       (function (idx) {
         var b = document.createElement('div');
+        eps[idx].seen = watched.indexOf(eps[idx].url) >= 0;
+        if (!eps[idx].seen && firstNew < 0) { firstNew = idx; }
         b.className = 'ep';
         if (kind === 'movie') { b.style.width = '16%'; }
         b.appendChild(document.createTextNode(kind === 'movie' ? 'Ver película' : String(eps[idx].n)));
-        b.onclick = function () { sel = idx; mark(); play(idx); };   // clic del Magic Remote
+        b.onclick = function () { sel = idx; zone = 'eps'; mark(); play(idx); };
         $('eps').appendChild(b);
       })(i);
     }
+    if (firstNew > 0) { sel = firstNew; }
     mark();
   }
 
   document.addEventListener('keydown', function (e) {
     var k = e.keyCode, n = sel;
-    if (k === 405) { location.href = 'test.html'; return; } 
     if (k === 461 || k === 27 || k === 8) { e.preventDefault(); history.back(); return; }
+    if (k === 404) { e.preventDefault(); toggleList(); return; }          // botón verde
+    if (zone === 'btn') {
+      if (k === 13) { toggleList(); }
+      else if (k === 40 && eps.length) { zone = 'eps'; mark(); }
+      else { return; }
+      e.preventDefault();
+      return;
+    }
     if (k === 13 || e.key === 'Enter') { e.preventDefault(); play(sel); return; }
     if (k === 37) { n = sel - 1; }
     else if (k === 39) { n = sel + 1; }
-    else if (k === 38) { n = sel - COLS; }
+    else if (k === 38) {
+      if (sel < COLS) { zone = 'btn'; mark(); e.preventDefault(); return; }
+      n = sel - COLS;
+    }
     else if (k === 40) { n = sel + COLS; }
     else { return; }
     e.preventDefault();

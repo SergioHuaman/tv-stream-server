@@ -3,65 +3,67 @@
 <head>
 <meta charset="utf-8">
 <title>Buscar</title>
+<link rel="stylesheet" href="style.css">
+<script src="store.js"></script>
 <style>
-  html, body { height: 100%; overflow: hidden; }
-  #view { position: fixed; top: 0; left: 0; right: 0; bottom: 0; overflow: hidden; }
-  #scroller { position: relative; -webkit-transition: -webkit-transform .25s; transition: transform .25s; }
-  body { margin: 0; background: #0b0b0f; color: #fff; font-family: sans-serif; }
-  h1 { margin: 0; padding: 20px 40px 0; font-size: 34px; color: #f47521; }
-  #q { margin: 14px 40px; padding: 12px 18px; font-size: 32px; background: #1c1c24; border-radius: 8px; min-height: 40px; }
-  #q.empty { color: #777; }
-  #kb { padding: 0 30px; overflow: hidden; }
-  .k { float: left; width: 8%; margin: 0.5%; padding: 12px 0; text-align: center; font-size: 26px; background: #1c1c24; border-radius: 6px; }
+  #qbox { margin: 6.5rem 3rem 1rem; padding: .8rem 1.4rem; font-size: 2.2rem; line-height: 3rem; min-height: 3rem; background: #1c1c24; border-radius: .6rem; }
+  #qbox.empty { color: #777; }
+  #kb { padding: 0 3rem; }
+  .krow { overflow: hidden; }
+  .k { float: left; width: 9%; margin: 0 .5% .6rem; padding: .9rem 0; text-align: center; font-size: 1.7rem; background: #1c1c24; border-radius: .5rem; }
   .k.sel { background: #f47521; color: #000; }
-  #msg { padding: 14px 40px; font-size: 24px; color: #ffb27a; min-height: 30px; }
-  #res { padding: 0 30px 60px; overflow: hidden; }
-  .card { float: left; width: 18%; margin: 1%; }
-  .cover { width: 100%; padding-top: 145%; background: #222 center/cover no-repeat; border-radius: 8px; }
-  .t { font-size: 20px; margin-top: 8px; height: 52px; overflow: hidden; }
-  .card.sel .cover { outline: 5px solid #f47521; }
-  .card.sel .t { color: #f47521; }
+  #smsg { margin: .5rem 3rem; font-size: 1.5rem; color: #ffb27a; min-height: 2rem; }
 </style>
 </head>
 <body>
-  <div id="view"><div id="scroller">
-  <h1>Buscar</h1>
-  <div id="q" class="empty">Escribe para buscar...</div>
+<div class="vt" style="position:fixed;top:0;margin:0;padding:1.5rem 3rem;font-size:2rem;z-index:5;">Buscar</div>
+<div id="view"><div id="scroller">
+  <div id="qbox" class="empty">Escribe para buscar...</div>
   <div id="kb"></div>
-  <div id="msg"></div>
-  <div id="res"></div>
-  </div></div>
+  <div id="smsg"></div>
+  <div id="res" class="grid"></div>
+</div></div>
+
 <script>
-  var scroller = document.getElementById('scroller');
+  var KEYS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZÑ0123456789'.split('').concat(['ESP', 'BORRAR']);
+  var KC = 10;   // teclas por fila (cada fila se crea con exactamente KC teclas)
+  var RC = 6;    // tarjetas por fila de resultados
+  var zone = 'kb', ki = 0, ri = 0, q = '', results = [], timer = null, xhr = null;
+  var kbEls = [], resEls = [];
+
+  function $(id) { return document.getElementById(id); }
+  function rem(n) { return n * parseFloat(window.getComputedStyle(document.documentElement).fontSize); }
+  function img(u) { return '/api/img?u=' + encodeURIComponent(u); }
   function setY(y) {
     var css = 'translateY(' + (-Math.max(0, Math.round(y))) + 'px)';
-    scroller.style.webkitTransform = css; scroller.style.transform = css;
+    var s = $('scroller');
+    s.style.webkitTransform = css; s.style.transform = css;
   }
-  var $ = function (id) { return document.getElementById(id); };
-  var KEYS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZÑ0123456789'.split('').concat(['ESP', '←']);
-  var KC = 10, RC = 5;                   // columnas del teclado / de resultados
-  var zone = 'kb', ki = 0, ri = 0;
-  var q = '', results = [], timer = null, xhr = null;
 
-  // Teclado en pantalla
-  var i, d;
-  for (i = 0; i < KEYS.length; i++) {
-    d = document.createElement('div');
-    d.className = 'k';
-    d.appendChild(document.createTextNode(KEYS[i]));
-    $('kb').appendChild(d);
-  }
+  // Teclado en pantalla: una fila por cada KC teclas.
+  (function () {
+    var row = null, i, k;
+    for (i = 0; i < KEYS.length; i++) {
+      if (i % KC === 0) { row = document.createElement('div'); row.className = 'krow'; $('kb').appendChild(row); }
+      k = document.createElement('div');
+      k.className = 'k';
+      k.appendChild(document.createTextNode(KEYS[i]));
+      (function (idx) { k.onclick = function () { zone = 'kb'; ki = idx; press(idx); mark(); }; })(i);
+      row.appendChild(k);
+      kbEls.push(k);
+    }
+  })();
 
   function mark() {
-    var ks = $('kb').children, rs = $('res').children, j;
-    for (j = 0; j < ks.length; j++) { ks[j].className = 'k' + (zone === 'kb' && j === ki ? ' sel' : ''); }
-    for (j = 0; j < rs.length; j++) { rs[j].className = 'card' + (zone === 'res' && j === ri ? ' sel' : ''); }
-    setY(zone === 'res' && rs[ri] ? rs[ri].offsetTop - 150 : 0);
+    var j;
+    for (j = 0; j < kbEls.length; j++) { kbEls[j].className = 'k' + (zone === 'kb' && j === ki ? ' sel' : ''); }
+    for (j = 0; j < resEls.length; j++) { resEls[j].className = 'card' + (zone === 'res' && j === ri ? ' sel' : ''); }
+    setY(zone === 'res' && resEls[ri] ? resEls[ri].offsetTop - rem(14) : 0);
   }
 
   function updateQ() {
-    $('q').innerText = q ? q : 'Escribe para buscar...';
-    $('q').className = q ? '' : 'empty';
+    $('qbox').innerText = q ? q : 'Escribe para buscar...';
+    $('qbox').className = q ? '' : 'empty';
     clearTimeout(timer);
     timer = setTimeout(doSearch, 700);   // busca solo cuando dejas de escribir
   }
@@ -69,40 +71,41 @@
   function doSearch() {
     if (xhr) { xhr.abort(); }
     var term = q.replace(/^\s+|\s+$/g, '');
-    $('res').innerHTML = ''; results = []; ri = 0;
-    if (term.length < 2) { $('msg').innerText = ''; mark(); return; }
-    $('msg').innerText = 'Buscando...';
-    xhr = new XMLHttpRequest();
-    var mine = xhr;
-    mine.open('GET', '/api/search?q=' + encodeURIComponent(term));
-    mine.timeout = 90000;   // la primera búsqueda puede tardar si arma el índice
+    $('res').innerHTML = ''; results = []; resEls = []; ri = 0;
+    if (term.length < 2) { $('smsg').innerText = ''; mark(); return; }
+    $('smsg').innerText = 'Buscando...';
+    var mine = xhr = new XMLHttpRequest();
+    mine.open('GET', '/api/search?q=' + encodeURIComponent(term) + (sessionStorage.getItem('pkids') === '1' ? '&kids=1' : ''));
+    mine.timeout = 90000;
     mine.onload = function () {
       var j = null;
       try { j = JSON.parse(mine.responseText); } catch (e) {}
-      if (mine.status !== 200 || !j) { $('msg').innerText = 'Error al buscar.'; return; }
+      if (mine.status !== 200 || !j) { $('smsg').innerText = 'Error al buscar.'; return; }
       results = j.results || [];
-      $('msg').innerText = results.length ? '' : 'Sin resultados para "' + term + '"';
-      for (var n = 0; n < results.length; n++) { addCard(results[n]); }
+      $('smsg').innerText = results.length ? results.length + ' resultados' : 'Sin resultados para "' + term + '"';
+      for (var n = 0; n < results.length; n++) { addCard(results[n], n); }
       mark();
     };
-    mine.onerror = mine.ontimeout = function () { $('msg').innerText = 'Error de conexión.'; };
+    mine.onerror = mine.ontimeout = function () { $('smsg').innerText = 'Error de conexión.'; };
     mine.send();
   }
 
-  function addCard(a) {
+  function addCard(a, idx) {
     var c = document.createElement('div'); c.className = 'card';
     var cv = document.createElement('div'); cv.className = 'cover';
-    if (a.image) { cv.style.backgroundImage = 'url(/api/img?u=' + encodeURIComponent(a.image) + ')'; }
+    if (a.image) { cv.style.backgroundImage = 'url(' + img(a.image) + ')'; }
     var t = document.createElement('div'); t.className = 't';
     t.appendChild(document.createTextNode(a.title));
     c.appendChild(cv); c.appendChild(t);
+    c.onclick = function () { abrir(results[idx]); };
     $('res').appendChild(c);
+    resEls.push(c);
   }
 
-  function press(idx) {
-    var key = KEYS[idx];
+  function press(i) {
+    var key = KEYS[i];
     if (key === 'ESP') { q += ' '; }
-    else if (key === '←') { q = q.slice(0, -1); }
+    else if (key === 'BORRAR') { q = q.slice(0, -1); }
     else { q += key; }
     updateQ();
   }
@@ -113,30 +116,37 @@
   }
 
   document.addEventListener('keydown', function (e) {
-    var k = e.keyCode;
-    if (k === 461) { history.back(); return; }
+    var k = e.keyCode, n = KEYS.length;
+    if (k === 461 || k === 27) { e.preventDefault(); history.back(); return; }
 
-    // Teclado físico (útil para probar en la PC)
-    if (e.key && e.key.length === 1 && /[a-zñ0-9 ]/i.test(e.key) && !e.ctrlKey) {
-      q += e.key.toUpperCase(); updateQ(); return;
+    // Escribir directo: teclado del PC o números del control.
+    if ((k >= 48 && k <= 57) || (k >= 65 && k <= 90) || k === 32) {
+      if (!e.ctrlKey) { q += String.fromCharCode(k); updateQ(); e.preventDefault(); }
+      return;
     }
-    if (k === 8) { q = q.slice(0, -1); updateQ(); return; }
+    if (k === 8) { q = q.slice(0, -1); updateQ(); e.preventDefault(); return; }
 
     if (zone === 'kb') {
-      if (k === 37 && ki % KC > 0) { ki--; }
-      else if (k === 39 && ki % KC < KC - 1 && ki < KEYS.length - 1) { ki++; }
-      else if (k === 38 && ki >= KC) { ki -= KC; }
+      var rowI = Math.floor(ki / KC), lastRow = Math.floor((n - 1) / KC);
+      if (k === 37) { if (ki % KC > 0) { ki--; } }
+      else if (k === 39) { if (ki % KC < KC - 1 && ki < n - 1) { ki++; } }
+      else if (k === 38) { if (ki >= KC) { ki -= KC; } }
       else if (k === 40) {
-        if (ki + KC < KEYS.length) { ki += KC; }
+        if (ki + KC < n) { ki += KC; }
+        else if (rowI < lastRow) { ki = n - 1; }                 // última fila más corta
         else if (results.length) { zone = 'res'; ri = 0; }
       }
       else if (k === 13) { press(ki); }
       else { return; }
     } else {
-      if (k === 37 && ri > 0) { ri--; }
-      else if (k === 39 && ri < results.length - 1) { ri++; }
+      var rn = results.length;
+      if (k === 37) { if (ri > 0) { ri--; } }
+      else if (k === 39) { if (ri < rn - 1) { ri++; } }
       else if (k === 38) { if (ri >= RC) { ri -= RC; } else { zone = 'kb'; } }
-      else if (k === 40 && ri + RC < results.length) { ri += RC; }
+      else if (k === 40) {
+        if (ri + RC < rn) { ri += RC; }
+        else if (Math.floor((rn - 1) / RC) > Math.floor(ri / RC)) { ri = rn - 1; }
+      }
       else if (k === 13) { abrir(results[ri]); return; }
       else { return; }
     }
